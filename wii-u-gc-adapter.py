@@ -119,9 +119,10 @@ try:
     for i, d in enumerate(payloads):
       status = d[0]
       # check for connected
-      if status & 0x10 != 0 and controllers[i] is None:
-        create_device(i)
-      elif status & 0x10 == 0:
+      if status & 0x20 != 0 or status & 0x10 != 0:
+        if controllers[i] is None:
+          create_device(i)
+      else:
         controllers[i] = None
 
       if controllers[i] is None:
