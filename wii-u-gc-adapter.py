@@ -25,12 +25,12 @@ DIGITAL_BUTTONS = {
 }
 
 AXIS_BYTES = {
-    uinput.ABS_X:     3,
-    uinput.ABS_Y:     4,
-    uinput.ABS_RX:    5,
-    uinput.ABS_RY:    6,
-    uinput.ABS_HAT1Y: 7,
-    uinput.ABS_HAT1X: 8
+    uinput.ABS_X:  3,
+    uinput.ABS_Y:  4,
+    uinput.ABS_RX: 5,
+    uinput.ABS_RY: 6,
+    uinput.ABS_Z:  7,
+    uinput.ABS_RZ: 8
 }
 
 def create_device(index):
@@ -49,23 +49,29 @@ def create_device(index):
     uinput.ABS_RX + (0, 255, 0, 0),
     uinput.ABS_RY + (0, 255, 0, 0),
     uinput.BTN_TL,
-    uinput.ABS_HAT1Y + (0, 255, 0, 0),
+    uinput.ABS_Z + (0, 255, 0, 0),
     uinput.BTN_TR,
-    uinput.ABS_HAT1X + (0, 255, 0, 0),
+    uinput.ABS_RZ + (0, 255, 0, 0),
     uinput.BTN_TR2
   )
   controllers[index] = uinput.Device(events, name="Wii U GameCube Adapter Port {}".format(index+1))
   controllers_state[index] = (
     0,
     {
-      uinput.ABS_X:     -1,
-      uinput.ABS_Y:     -1,
-      uinput.ABS_RX:    -1,
-      uinput.ABS_RY:    -1,
-      uinput.ABS_HAT1Y: -1,
-      uinput.ABS_HAT1X: -1
+      uinput.ABS_X:  -1,
+      uinput.ABS_Y:  -1,
+      uinput.ABS_RX: -1,
+      uinput.ABS_RY: -1,
+      uinput.ABS_Z:  -1,
+      uinput.ABS_RZ: -1
     }
   )
+
+STATE_NORMAL   = 0x10
+STATE_WAVEBIRD = 0x20
+
+def is_connected(state):
+  return state & (STATE_NORMAL | STATE_WAVEBIRD) != 0
 
 dev = usb.core.find(idVendor=0x057e, idProduct=0x0337)
  
@@ -119,9 +125,9 @@ try:
     for i, d in enumerate(payloads):
       status = d[0]
       # check for connected
-      if status & 0x10 != 0 and controllers[i] is None:
+      if is_connected(status) and controllers[i] is None:
         create_device(i)
-      elif status & 0x10 == 0:
+      elif not is_connected(status):
         controllers[i] = None
 
       if controllers[i] is None:
@@ -147,6 +153,9 @@ try:
         if axis == uinput.ABS_Y or axis == uinput.ABS_RY:
           # flip from 0 - 255 to 255 - 0
           value ^= 0xFF
+        elif axis == uinput.ABS_RZ or axis == uinput.ABS_Z:
+          # scale from 0 - 255 to 128 - 255
+          value = (value >> 1) + 0x80
 
         if controllers_state[i][1][axis] != value:
           controllers[i].emit(axis, value, syn=False)
