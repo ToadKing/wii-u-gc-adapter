@@ -5,8 +5,6 @@
 import usb.core
 import usb.util
 import uinput
-from collections import namedtuple
-from struct import unpack
 
 controllers = [None, None, None, None]
 controllers_state = [None, None, None, None]
@@ -148,7 +146,7 @@ try:
         newaxis[axis] = value
         if axis == uinput.ABS_Y or axis == uinput.ABS_RY:
           # flip from 0 - 255 to 255 - 0
-          value = (value - 0x80) * -1 + 0x80
+          value ^= 0xFF
 
         if controllers_state[i][1][axis] != value:
           controllers[i].emit(axis, value, syn=False)
