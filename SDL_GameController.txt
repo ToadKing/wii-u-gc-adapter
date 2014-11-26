@@ -17,7 +17,8 @@ SDL_CONTROLLER_BUTTON_RIGHTSTICK
 SDL_CONTROLLER_BUTTON_LEFTSHOULDER
 
 Also, SDL_CONTROLLER_AXIS_TRIGGERLEFT and SDL_CONTROLLER_AXIS_TRIGGERRIGHT are
-not currently supported, but this input may be provided by the uinput script.
+currently only supported as digital buttons, but more accurate input may be
+provided by the uinput script.
 
 For more information about the SDL_GameController API, visit the SDL wiki:
 
