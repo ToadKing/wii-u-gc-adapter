@@ -39,11 +39,11 @@ def create_device(index, raw):
   if raw:
     axis_cal = (0, 255, 0, 0)
     cstick_cal = (0, 255, 0, 0)
-    trigger_cal = (-255, 255, 0, 0)
+    trigger_cal = (0, 255, 0, 0)
   else:
     axis_cal = (20, 235, 0, 0)
     cstick_cal = (30, 225, 0, 0)
-    trigger_cal = (-200, 225, 0, 0)
+    trigger_cal = (25, 225, 0, 0)
   events = (
     uinput.BTN_NORTH,
     uinput.BTN_SOUTH,
