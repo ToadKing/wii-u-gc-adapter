@@ -1,0 +1,21 @@
+Place the following line in your ~/.bashrc file:
+
+export SDL_GAMECONTROLLERCONFIG="0000000057696920552047616d654300,Wii U GameCube Adapter Port 1,platform:Linux,x:b3,a:b0,b:b1,y:b2,start:b7,dpleft:b10,dpdown:b9,dpright:b11,dpup:b8,lefttrigger:a2,rightshoulder:b6,righttrigger:a5,leftx:a0,lefty:a1,rightx:a3,righty:a4,"
+
+This will provide an automatic controller configuration for games that use the
+SDL_GameController API within SDL2. While the controller name implies that this
+is for the first port only, this configuration should work with any number of
+devices.
+
+Note that the following inputs are not supported, due to the controller's own
+limitations:
+
+SDL_CONTROLLER_BUTTON_BACK
+SDL_CONTROLLER_BUTTON_GUIDE
+SDL_CONTROLLER_BUTTON_LEFTSTICK
+SDL_CONTROLLER_BUTTON_RIGHTSTICK
+SDL_CONTROLLER_BUTTON_LEFTSHOULDER
+
+For more information about the SDL_GameController API, visit the SDL wiki:
+
+https://wiki.libsdl.org/CategoryGameController
