@@ -35,6 +35,13 @@ AXIS_BYTES = {
     uinput.ABS_RZ: 8
 }
 
+
+if sys.version_info.major < 3:
+    iteritems = lambda x: x.iteritems()
+else:
+    iteritems = lambda x: x.items()
+
+
 def create_device(index, raw):
   if raw:
     axis_cal = (0, 255, 0, 0)
@@ -84,10 +91,9 @@ def is_connected(state):
   return state & (STATE_NORMAL | STATE_WAVEBIRD) != 0
 
 def help():
-  print "usage: " + sys.argv[0] + " [-h/--help] [-r/--raw]"
-  print
-  print "    -h/--help: display this message"
-  print "    -r/--raw:  do not do scaling on axis"
+  print("usage: " + sys.argv[0] + " [-h/--help] [-r/--raw]\n\n"
+        "    -h/--help: display this message\n"
+        "    -r/--raw:  do not do scaling on axis")
   sys.exit(-1)
 
 def main():
@@ -103,7 +109,7 @@ def main():
     if opt in ("-h", "--help"):
       help()
     elif opt in ("-r", "--raw"):
-      print "raw mode"
+      print("raw mode")
       raw_mode = True
 
   if dev is None:
@@ -143,10 +149,10 @@ def main():
       except (KeyboardInterrupt, SystemExit):
         raise
       except:
-        print "read error"
+        print("read error")
         continue
       if data[0] != 0x21:
-        print "unknown message {:02x}}".format(data[0])
+        print("unknown message {:02x}}".format(data[0]))
         continue
 
       payloads = [data[1:10], data[10:19], data[19:28], data[28:37]]
@@ -169,7 +175,7 @@ def main():
 
         btns = d[1] << 8 | d[2]
         newmask = 0
-        for btn, mask in DIGITAL_BUTTONS.iteritems():
+        for btn, mask in iteritems(DIGITAL_BUTTONS):
           pressed = btns & mask
           newmask |= pressed
 
@@ -178,7 +184,7 @@ def main():
             controllers[i].emit(btn, 1 if pressed != 0 else 0, syn=False)
 
         newaxis = {}
-        for axis, offset in AXIS_BYTES.iteritems():
+        for axis, offset in iteritems(AXIS_BYTES):
           value = d[offset]
           newaxis[axis] = value
           if axis == uinput.ABS_Y or axis == uinput.ABS_RY:
