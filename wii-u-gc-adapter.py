@@ -8,6 +8,11 @@ import uinput
 import sys
 import getopt
 
+if sys.version_info.major < 3:
+    iteritems = lambda x: x.iteritems()
+else:
+    iteritems = lambda x: x.items()
+
 controllers = [None, None, None, None]
 controllers_state = [None, None, None, None]
 
@@ -35,14 +40,24 @@ AXIS_BYTES = {
     uinput.ABS_RZ: 8
 }
 
+STATE_NORMAL   = 0x10
+STATE_WAVEBIRD = 0x20
 
-if sys.version_info.major < 3:
-    iteritems = lambda x: x.iteritems()
-else:
-    iteritems = lambda x: x.items()
+def controller_type(status):
+  return status & (STATE_NORMAL | STATE_WAVEBIRD)
 
+def is_connected(status):
+  return status & (STATE_NORMAL | STATE_WAVEBIRD) in (STATE_NORMAL, STATE_WAVEBIRD)
 
-def create_device(index, raw):
+def controller_type_string(controller_type):
+  if controller_type == STATE_NORMAL:
+    return "GameCube Controller"
+  elif controller_type == STATE_WAVEBIRD:
+    return "WaveBird Controller"
+  else:
+    return "Unknown Controller"
+
+def create_device(index, status, raw):
   if raw:
     axis_cal = (0, 255, 0, 0)
     cstick_cal = (0, 255, 0, 0)
@@ -73,6 +88,7 @@ def create_device(index, raw):
   )
   controllers[index] = uinput.Device(events, name="Wii U GameCube Adapter Port {}".format(index+1))
   controllers_state[index] = (
+    controller_type(status),
     0,
     {
       uinput.ABS_X:  -1,
@@ -83,12 +99,11 @@ def create_device(index, raw):
       uinput.ABS_RZ: -1
     }
   )
+  print("{} connected on port {}".format(controller_type_string(controllers_state[index][0]), index+1))
 
-STATE_NORMAL   = 0x10
-STATE_WAVEBIRD = 0x20
-
-def is_connected(state):
-  return state & (STATE_NORMAL | STATE_WAVEBIRD) != 0
+def destroy_device(index):
+  print("disconnecting {} on port {}".format(controller_type_string(controllers_state[index][0]), index+1))
+  controllers[index] = None
 
 def help():
   print("usage: " + sys.argv[0] + " [-h/--help] [-r/--raw]\n\n"
@@ -163,15 +178,19 @@ def main():
         status = d[0]
         # check for connected
         if is_connected(status) and controllers[i] is None:
-          create_device(i, raw_mode)
-        elif not is_connected(status):
-          controllers[i] = None
+          create_device(i, status, raw_mode)
+        elif not is_connected(status) and controllers[i] is not None:
+          destroy_device(i)
 
         if controllers[i] is None:
           continue
 
         # if status & 0x04 != 0:
         #   do something about having both USB plugs connected
+
+        if controller_type(status) != controllers_state[i][0]:
+          print("controller on port {} changed from {} to {}???".format(i+1,
+            controller_type_string(controllers_state[i][0]), controller_type_string(controller_type(status))))
 
         btns = d[1] << 8 | d[2]
         newmask = 0
@@ -180,7 +199,7 @@ def main():
           newmask |= pressed
 
           # state change
-          if controllers_state[i][0] & mask != pressed:
+          if controllers_state[i][1] & mask != pressed:
             controllers[i].emit(btn, 1 if pressed != 0 else 0, syn=False)
 
         newaxis = {}
@@ -194,11 +213,12 @@ def main():
             # scale from 0 - 255 to 127 - 255
             #value = (value >> 1) + 127
 
-          if controllers_state[i][1][axis] != value:
+          if controllers_state[i][2][axis] != value:
             controllers[i].emit(axis, value, syn=False)
 
         controllers[i].syn()
         controllers_state[i] = (
+          controller_type(status),
           newmask,
           newaxis
         )
