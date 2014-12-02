@@ -58,6 +58,7 @@ struct ports
 {
    bool connected;
    bool extra_power;
+   bool rumbling;
    int uinput;
    unsigned char type;
    uint16_t buttons;
@@ -69,6 +70,7 @@ struct adapter
    struct libusb_device *device;
    struct libusb_device_handle *handle;
    pthread_t thread;
+   unsigned char rumble[5];
    struct ports controllers[4];
 };
 
@@ -147,9 +149,10 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    }
 
    // rumble
-   //ioctl(port->uinput, UI_SET_EVBIT, EV_FF);
+   ioctl(port->uinput, UI_SET_EVBIT, EV_FF);
    //ioctl(port->uinput, UI_SET_FFBIT, FF_PERIODIC);
-   //ioctl(port->uinput, UI_SET_FFBIT, FF_RUMBLE);
+   ioctl(port->uinput, UI_SET_FFBIT, FF_RUMBLE);
+   uinput_dev.ff_effects_max = 1;
 
    snprintf(uinput_dev.name, sizeof(uinput_dev.name), "Wii U GameCube Adapter Port %d", i+1);
    uinput_dev.name[sizeof(uinput_dev.name)-1] = 0;
@@ -219,8 +222,7 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload)
    if (!port->connected)
       return;
 
-   // if status & 0x04 != 0:
-   //    do something about having both USB plugs connected
+   port->extra_power = ((status & 0x04) != 0);
 
    if (type != port->type)
    {
@@ -277,6 +279,37 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload)
       e_count++;
       write(port->uinput, events, sizeof(events[0]) * e_count);
    }
+
+   // check for rumble events
+   struct input_event e;
+   ssize_t ret = read(port->uinput, &e, sizeof(e));
+   if (ret == sizeof(e) && e.type == EV_UINPUT)
+   {
+      switch (e.code)
+      {
+         case UI_FF_UPLOAD:
+         {
+            printf("rumble start\n");
+            struct uinput_ff_upload upload = { 0 };
+            upload.request_id = e.value;
+            ioctl(port->uinput, UI_BEGIN_FF_UPLOAD, &upload);
+            port->rumbling = true;
+            upload.retval = 0;
+            ioctl(port->uinput, UI_END_FF_UPLOAD, &upload);
+            break;
+         }
+         case UI_FF_ERASE:
+         {
+            printf("rumble erase\n");
+            struct uinput_ff_erase erase = { 0 };
+            erase.request_id = e.value;
+            ioctl(port->uinput, UI_BEGIN_FF_ERASE, &erase);
+            port->rumbling = false;
+            erase.retval = 0;
+            ioctl(port->uinput, UI_END_FF_ERASE, &erase);
+         }
+      }
+   }
 }
 
 static void *adapter_thread(void *data)
@@ -306,10 +339,19 @@ static void *adapter_thread(void *data)
       
       data = &payload[1];
 
+      unsigned char rumble[5] = { 0x11 };
       for (int i = 0; i < 4; i++, data += 9)
       {
          handle_payload(i, &a.controllers[i], data);
+         rumble[i+1] = (a.controllers[i].rumbling && a.controllers[i].extra_power && a.controllers[i].type == STATE_NORMAL);
       }
+
+      if (memcmp(rumble, a.rumble, sizeof(rumble)) != 0)
+      {
+         memcpy(a.rumble, rumble, sizeof(rumble));
+         libusb_interrupt_transfer(a.handle, EP_OUT, a.rumble, sizeof(a.rumble), &size, 0);
+      }
+
       pthread_mutex_lock(&adapter_mutex);
       i = find_adapter(device, i);
       // we were removed, abort
