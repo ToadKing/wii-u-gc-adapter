@@ -27,11 +27,11 @@ Quirks
 * It's new, so there might be bugs! Please report them!
 * The uinput kernel module is required. If it's not autoloaded, you should do
   so with `modprobe uinput`
-* If all your controllers start messing with the mouse cursor, you can fix
-  them with this xorg.conf rule. (You can place it in a file in xorg.conf.d)
 * Input ranges on the sticks/analog triggers are scaled to try to match the
   physical ranges of the controls. To remove this scaling run the program with
   the `--raw` flag.
+* If all your controllers start messing with the mouse cursor, you can fix
+  them with this xorg.conf rule. (You can place it in a file in xorg.conf.d)
 
 ````
 Section "InputClass"
