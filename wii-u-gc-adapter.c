@@ -1,5 +1,8 @@
 // See LICENSE for license
 
+#define _XOPEN_SOURCE 600
+
+#include <time.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +28,8 @@
 
 #define STATE_NORMAL   0x10
 #define STATE_WAVEBIRD 0x20
+
+#define MAX_FF_EVENTS 4
 
 const int BUTTON_OFFSET_VALUES[16] = {
    BTN_START,
@@ -54,15 +59,26 @@ const int AXIS_OFFSET_VALUES[6] = {
    ABS_RZ
 };
 
+struct ff_event
+{
+   bool in_use;
+   bool forever;
+   int duration;
+   int delay;
+   int repetitions;
+   struct timespec start_time;
+   struct timespec end_time;
+};
+
 struct ports
 {
    bool connected;
    bool extra_power;
-   bool rumbling;
    int uinput;
    unsigned char type;
    uint16_t buttons;
    uint8_t axis[6];
+   struct ff_event ff_events[MAX_FF_EVENTS];
 };
 
 struct adapter
@@ -150,9 +166,9 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
 
    // rumble
    ioctl(port->uinput, UI_SET_EVBIT, EV_FF);
-   //ioctl(port->uinput, UI_SET_FFBIT, FF_PERIODIC);
+   ioctl(port->uinput, UI_SET_FFBIT, FF_CONSTANT);
    ioctl(port->uinput, UI_SET_FFBIT, FF_RUMBLE);
-   uinput_dev.ff_effects_max = 1;
+   uinput_dev.ff_effects_max = MAX_FF_EVENTS;
 
    snprintf(uinput_dev.name, sizeof(uinput_dev.name), "Wii U GameCube Adapter Port %d", i+1);
    uinput_dev.name[sizeof(uinput_dev.name)-1] = 0;
@@ -168,7 +184,7 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    return true;
 }
 
-void uinput_destroy(int i, struct ports *port)
+static void uinput_destroy(int i, struct ports *port)
 {
    fprintf(stderr, "disconnecting on port %d\n", i);
    ioctl(port->uinput, UI_DEV_DESTROY);
@@ -205,7 +221,85 @@ static int find_adapter(struct libusb_device *device, int guess)
    return -1;
 }
 
-static void handle_payload(int i, struct ports *port, unsigned char *payload)
+static struct timespec ts_add(struct timespec *start, int milliseconds)
+{
+   struct timespec ret = *start;
+   int s = milliseconds / 1000;
+   int ns = (milliseconds % 1000) * 1000000;
+   ret.tv_sec += s ;
+   ret.tv_nsec += ns ;
+   if (ret.tv_nsec >= 1000000000L)
+   {
+      ret.tv_sec++;
+      ret.tv_nsec -= 1000000000L;
+   }
+   return ret;
+}
+
+static bool ts_greaterthan(struct timespec *first, struct timespec *second)
+{
+   return (first->tv_sec >= second->tv_sec || (first->tv_sec == second->tv_sec && first->tv_nsec >= second->tv_nsec));
+}
+
+static bool ts_lessthan(struct timespec *first, struct timespec *second)
+{
+   return (first->tv_sec <= second->tv_sec || (first->tv_sec == second->tv_sec && first->tv_nsec <= second->tv_nsec));
+}
+
+static void update_ff_start_stop(struct ff_event *e, struct timespec *current_time)
+{
+   e->repetitions--;
+
+   if (e->repetitions < 0)
+   {
+      e->repetitions = 0;
+      e->start_time.tv_sec = 0;
+      e->start_time.tv_nsec = 0;
+      e->end_time.tv_sec = 0;
+      e->end_time.tv_nsec = 0;
+   }
+   else
+   {
+      e->start_time = ts_add(current_time, e->delay);
+      if (e->duration == 0)
+      {
+         e->end_time.tv_sec = INT_MAX;
+         e->end_time.tv_nsec = 999999999L;
+      }
+      else
+      {
+         e->end_time = ts_add(&e->start_time, e->duration);
+      }
+   }
+}
+
+static int create_ff_event(struct ports *port, struct uinput_ff_upload *upload)
+{
+   if (upload->old.type != 0)
+   {
+      port->ff_events[upload->old.id].forever = (upload->effect.replay.length == 0);
+      port->ff_events[upload->old.id].duration = upload->effect.replay.length;
+      port->ff_events[upload->old.id].delay = upload->effect.replay.delay;
+      port->ff_events[upload->old.id].repetitions = 0;
+      return upload->old.id;
+   }
+   for (int i = 0; i < MAX_FF_EVENTS; i++)
+   {
+      if (!port->ff_events[i].in_use)
+      {
+         port->ff_events[i].in_use = true;
+         port->ff_events[i].forever = (upload->effect.replay.length == 0);
+         port->ff_events[i].duration = upload->effect.replay.length;
+         port->ff_events[i].delay = upload->effect.replay.delay;
+         port->ff_events[i].repetitions = 0;
+         return i;
+      }
+   }
+
+   return -1;
+}
+
+static void handle_payload(int i, struct ports *port, unsigned char *payload, struct timespec *current_time)
 {
    unsigned char status = payload[0];
    unsigned char type = connected_type(status);
@@ -283,30 +377,48 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload)
    // check for rumble events
    struct input_event e;
    ssize_t ret = read(port->uinput, &e, sizeof(e));
-   if (ret == sizeof(e) && e.type == EV_UINPUT)
+   if (ret == sizeof(e))
    {
-      switch (e.code)
+      if (e.type == EV_UINPUT)
       {
-         case UI_FF_UPLOAD:
+         switch (e.code)
          {
-            printf("rumble start\n");
-            struct uinput_ff_upload upload = { 0 };
-            upload.request_id = e.value;
-            ioctl(port->uinput, UI_BEGIN_FF_UPLOAD, &upload);
-            port->rumbling = true;
-            upload.retval = 0;
-            ioctl(port->uinput, UI_END_FF_UPLOAD, &upload);
-            break;
+            case UI_FF_UPLOAD:
+            {
+               struct uinput_ff_upload upload = { 0 };
+               upload.request_id = e.value;
+               ioctl(port->uinput, UI_BEGIN_FF_UPLOAD, &upload);
+               int id = create_ff_event(port, &upload);
+               if (id < 0)
+               {
+                  // TODO: what's the proper error code for this?
+                  upload.retval = -1;
+               }
+               else
+               {
+                  upload.retval = 0;
+                  upload.effect.id = id;
+               }
+               ioctl(port->uinput, UI_END_FF_UPLOAD, &upload);
+               break;
+            }
+            case UI_FF_ERASE:
+            {
+               struct uinput_ff_erase erase = { 0 };
+               erase.request_id = e.value;
+               ioctl(port->uinput, UI_BEGIN_FF_ERASE, &erase);
+               if (erase.effect_id < MAX_FF_EVENTS)
+                  port->ff_events[erase.effect_id].in_use = false;
+               ioctl(port->uinput, UI_END_FF_ERASE, &erase);
+            }
          }
-         case UI_FF_ERASE:
+      }
+      else if (e.type == EV_FF)
+      {
+         if (e.code < MAX_FF_EVENTS && port->ff_events[e.code].in_use)
          {
-            printf("rumble erase\n");
-            struct uinput_ff_erase erase = { 0 };
-            erase.request_id = e.value;
-            ioctl(port->uinput, UI_BEGIN_FF_ERASE, &erase);
-            port->rumbling = false;
-            erase.retval = 0;
-            ioctl(port->uinput, UI_END_FF_ERASE, &erase);
+            port->ff_events[e.code].repetitions = e.value;
+            update_ff_start_stop(&port->ff_events[e.code], current_time);
          }
       }
    }
@@ -339,11 +451,27 @@ static void *adapter_thread(void *data)
       
       data = &payload[1];
 
-      unsigned char rumble[5] = { 0x11 };
+      unsigned char rumble[5] = { 0x11, 0, 0, 0, 0 };
+      struct timespec current_time = { 0 };
+      clock_gettime(CLOCK_REALTIME, &current_time);
       for (int i = 0; i < 4; i++, data += 9)
       {
-         handle_payload(i, &a.controllers[i], data);
-         rumble[i+1] = (a.controllers[i].rumbling && a.controllers[i].extra_power && a.controllers[i].type == STATE_NORMAL);
+         handle_payload(i, &a.controllers[i], data, &current_time);
+         rumble[i+1] = 0;
+         if (a.controllers[i].extra_power && a.controllers[i].type == STATE_NORMAL)
+         {
+            for (int j = 0; j < MAX_FF_EVENTS; j++)
+            {
+               struct ff_event *e = &a.controllers[i].ff_events[j];
+               if (e->in_use)
+               {
+                  if (ts_lessthan(&e->start_time, &current_time) && ts_greaterthan(&e->end_time, &current_time))
+                     rumble[i+1] = 1;
+                  else
+                     update_ff_start_stop(e, &current_time);
+               }
+            }
+         }
       }
 
       if (memcmp(rumble, a.rumble, sizeof(rumble)) != 0)
