@@ -557,10 +557,16 @@ static int hotplug_callback(struct libusb_context *ctx, struct libusb_device *de
    return 0;
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
    struct udev *udev;
    struct udev_device *uinput;
+
+   if (argc > 1 && (strcmp(argv[1], "-r") == 0 || strcmp(argv[1], "--raw") == 0))
+   {
+      fprintf(stderr, "raw mode enabled\n");
+      raw_mode = true;
+   }
 
    if (pthread_mutex_init(&adapter_mutex, NULL) < 0)
    {
