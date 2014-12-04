@@ -1,4 +1,4 @@
-CFLAGS  += -Wall -Wextra -std=c99 $(shell pkg-config --cflags libusb-1.0) $(shell pkg-config --cflags udev)
+CFLAGS  += -Wall -Wextra -pedantic -Wno-format -std=c99 $(shell pkg-config --cflags libusb-1.0) $(shell pkg-config --cflags udev)
 LDFLAGS += -lpthread -ludev $(shell pkg-config --libs libusb-1.0) $(shell pkg-config --libs udev)
 
 TARGET = wii-u-gc-adapter

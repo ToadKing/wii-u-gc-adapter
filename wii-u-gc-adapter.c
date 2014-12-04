@@ -449,14 +449,14 @@ static void *adapter_thread(void *data)
       if (size != 37 || payload[0] != 0x21)
          continue;
       
-      data = &payload[1];
+      unsigned char *controller = &payload[1];
 
       unsigned char rumble[5] = { 0x11, 0, 0, 0, 0 };
       struct timespec current_time = { 0 };
       clock_gettime(CLOCK_REALTIME, &current_time);
-      for (int i = 0; i < 4; i++, data += 9)
+      for (int i = 0; i < 4; i++, controller += 9)
       {
-         handle_payload(i, &a.controllers[i], data, &current_time);
+         handle_payload(i, &a.controllers[i], controller, &current_time);
          rumble[i+1] = 0;
          if (a.controllers[i].extra_power && a.controllers[i].type == STATE_NORMAL)
          {
