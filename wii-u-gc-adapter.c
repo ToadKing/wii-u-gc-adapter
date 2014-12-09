@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include <libudev.h>
 #include <libusb.h>
@@ -83,21 +84,20 @@ struct ports
 
 struct adapter
 {
+   volatile bool quitting;
    struct libusb_device *device;
    struct libusb_device_handle *handle;
    pthread_t thread;
    unsigned char rumble[5];
    struct ports controllers[4];
+   struct adapter *next;
 };
 
 static bool raw_mode;
 
 static volatile int quitting;
 
-static pthread_mutex_t adapter_mutex;
-
-static struct adapter *adapters;
-static volatile int adapters_size;
+static struct adapter adapters;
 
 static const char *uinput_path;
 
@@ -173,10 +173,17 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    snprintf(uinput_dev.name, sizeof(uinput_dev.name), "Wii U GameCube Adapter Port %d", i+1);
    uinput_dev.name[sizeof(uinput_dev.name)-1] = 0;
    uinput_dev.id.bustype = BUS_USB;
-   write(port->uinput, &uinput_dev, sizeof(uinput_dev));
+   if (write(port->uinput, &uinput_dev, sizeof(uinput_dev)) != sizeof(uinput_dev))
+   {
+      fprintf(stderr, "error writing uinput device settings");
+      close(port->uinput);
+      return false;
+   }
+
    if (ioctl(port->uinput, UI_DEV_CREATE) != 0)
    {
       fprintf(stderr, "error creating uinput device");
+      close(port->uinput);
       return false;
    }
    port->type = type;
@@ -190,35 +197,6 @@ static void uinput_destroy(int i, struct ports *port)
    ioctl(port->uinput, UI_DEV_DESTROY);
    close(port->uinput);
    port->connected = false;
-}
-
-// NOTE: only call the following functions when the adapter mutex is owned, they are not thread safe otherwise
-static void realloc_adapters(void)
-{
-   if (adapters_size > 0)
-   {
-      adapters = realloc(adapters, sizeof(struct adapter) * adapters_size);
-
-      if (adapters == NULL)
-      {
-         fprintf(stderr, "FATAL: realloc() failed");
-         exit(-1);
-      }
-   }
-}
-
-static int find_adapter(struct libusb_device *device, int guess)
-{
-   if (guess >= 0 && guess < adapters_size && adapters[guess].device == device)
-      return guess;
-
-   for (int i = 0; i < adapters_size; i++)
-   {
-      if (adapters[i].device == device)
-         return i;
-   }
-
-   return -1;
 }
 
 static struct timespec ts_add(struct timespec *start, int milliseconds)
@@ -371,7 +349,8 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
       events[e_count].type = EV_SYN;
       events[e_count].code = SYN_REPORT;
       e_count++;
-      write(port->uinput, events, sizeof(events[0]) * e_count);
+      if (write(port->uinput, events, sizeof(events[0]) * e_count) != (int)sizeof(events[0]) * e_count)
+         fprintf(stderr, "Warning: writing input events failed\n");
    }
 
    // check for rumble events
@@ -426,26 +405,13 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
 
 static void *adapter_thread(void *data)
 {
-   struct libusb_device *device = (struct libusb_device *)data;
-   int i = -1;
+   struct adapter *a = (struct adapter *)data;
 
-   while (!quitting)
+   while (!a->quitting)
    {
-      pthread_mutex_lock(&adapter_mutex);
-      i = find_adapter(device, i);
-      // we were removed, abort
-      if (i < 0)
-      {
-         pthread_mutex_unlock(&adapter_mutex);
-         break;
-      }
-
-      struct adapter a = adapters[i];
-
-      pthread_mutex_unlock(&adapter_mutex);
       unsigned char payload[37];
       int size = 0;
-      libusb_interrupt_transfer(a.handle, EP_IN, payload, sizeof(payload), &size, 0);
+      libusb_interrupt_transfer(a->handle, EP_IN, payload, sizeof(payload), &size, 0);
       if (size != 37 || payload[0] != 0x21)
          continue;
       
@@ -456,13 +422,13 @@ static void *adapter_thread(void *data)
       clock_gettime(CLOCK_REALTIME, &current_time);
       for (int i = 0; i < 4; i++, controller += 9)
       {
-         handle_payload(i, &a.controllers[i], controller, &current_time);
+         handle_payload(i, &a->controllers[i], controller, &current_time);
          rumble[i+1] = 0;
-         if (a.controllers[i].extra_power && a.controllers[i].type == STATE_NORMAL)
+         if (a->controllers[i].extra_power && a->controllers[i].type == STATE_NORMAL)
          {
             for (int j = 0; j < MAX_FF_EVENTS; j++)
             {
-               struct ff_event *e = &a.controllers[i].ff_events[j];
+               struct ff_event *e = &a->controllers[i].ff_events[j];
                if (e->in_use)
                {
                   if (ts_lessthan(&e->start_time, &current_time) && ts_greaterthan(&e->end_time, &current_time))
@@ -474,25 +440,76 @@ static void *adapter_thread(void *data)
          }
       }
 
-      if (memcmp(rumble, a.rumble, sizeof(rumble)) != 0)
+      if (memcmp(rumble, a->rumble, sizeof(rumble)) != 0)
       {
-         memcpy(a.rumble, rumble, sizeof(rumble));
-         libusb_interrupt_transfer(a.handle, EP_OUT, a.rumble, sizeof(a.rumble), &size, 0);
+         memcpy(a->rumble, rumble, sizeof(rumble));
+         libusb_interrupt_transfer(a->handle, EP_OUT, a->rumble, sizeof(a->rumble), &size, 0);
       }
+   }
 
-      pthread_mutex_lock(&adapter_mutex);
-      i = find_adapter(device, i);
-      // we were removed, abort
-      if (i < 0)
-      {
-         pthread_mutex_unlock(&adapter_mutex);
-         break;
-      }
-      adapters[i] = a;
-      pthread_mutex_unlock(&adapter_mutex);
+   for (int i = 0; i < 4; i++)
+   {
+      if (a->controllers[i].connected)
+         uinput_destroy(i, &a->controllers[i]);
    }
 
    return NULL;
+}
+
+static void add_adapter(struct libusb_device *dev)
+{
+   struct adapter *a = (struct adapter *)calloc(1, sizeof(struct adapter));
+   if (a == NULL)
+   {
+      fprintf(stderr, "FATAL: calloc() failed");
+      exit(-1);
+   }
+   a->device = dev;
+
+   if (libusb_open(a->device, &a->handle) != 0)
+   {
+      fprintf(stderr, "Error opening device 0x%p\n", a->device);
+      return;
+   }
+
+   if (libusb_kernel_driver_active(a->handle, 0) == 1 && libusb_detach_kernel_driver(a->handle, 0))
+   {
+      fprintf(stderr, "Error detaching handle 0x%p from kernel\n", a->handle);
+      return;
+   }
+
+   int tmp;
+   unsigned char payload[1] = { 0x13 };
+   libusb_interrupt_transfer(a->handle, EP_OUT, payload, sizeof(payload), &tmp, 0);
+
+   struct adapter *old_head = adapters.next;
+   adapters.next = a;
+   a->next = old_head;
+
+   pthread_create(&a->thread, NULL, adapter_thread, a);
+
+   fprintf(stderr, "adapter 0x%p connected\n", a->device);
+}
+
+static void remove_adapter(struct libusb_device *dev)
+{
+   struct adapter *a = &adapters;
+   while (a->next != NULL)
+   {
+      if (a->next->device == dev)
+      {
+         a->next->quitting = true;
+         pthread_join(a->next->thread, NULL);
+         fprintf(stderr, "adapter 0x%p disconnected\n", a->next->device);
+         libusb_close(a->next->handle);
+         struct adapter *new_next = a->next->next;
+         free(a->next);
+         a->next = new_next;
+         return;
+      }
+
+      a = a->next;
+   }
 }
 
 static int hotplug_callback(struct libusb_context *ctx, struct libusb_device *dev, libusb_hotplug_event event, void *user_data)
@@ -501,66 +518,29 @@ static int hotplug_callback(struct libusb_context *ctx, struct libusb_device *de
    (void)user_data;
    if (event == LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED)
    {
-      struct adapter a = { 0 };
-      a.device = dev;
-
-      if (libusb_open(a.device, &a.handle) != 0)
-      {
-         fprintf(stderr, "Error opening device 0x%p\n", a.device);
-         return 0;
-      }
-
-      if (libusb_kernel_driver_active(a.handle, 0) == 1 && libusb_detach_kernel_driver(a.handle, 0))
-      {
-         fprintf(stderr, "Error detaching handle 0x%p from kernel\n", a.handle);
-         return 0;
-      }
-
-      int tmp;
-      unsigned char payload[1] = { 0x13 };
-      libusb_interrupt_transfer(a.handle, EP_OUT, payload, sizeof(payload), &tmp, 0);
-      pthread_mutex_lock(&adapter_mutex);
-      adapters_size++;
-      realloc_adapters();
-      adapters[adapters_size-1] = a;
-      pthread_mutex_unlock(&adapter_mutex);
-
-      pthread_create(&a.thread, NULL, adapter_thread, a.device);
-
-      fprintf(stderr, "adapter 0x%p connected\n", a.device);
+      add_adapter(dev);
    }
    else if (event == LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT)
    {
-      pthread_mutex_lock(&adapter_mutex);
-      int i = find_adapter(dev, -1);
-      struct adapter a;
-      if (i >= 0)
-      {
-         a = adapters[i];
-         memmove(&adapters[i], &adapters[i+1], (adapters_size-i-1)*sizeof(struct adapter));
-         adapters_size--;
-         realloc_adapters();
-      }
-      pthread_mutex_unlock(&adapter_mutex);
-      if (i >= 0)
-      {
-         fprintf(stderr, "adapter 0x%p disconnected\n", a.device);
-         for (int i = 0; i < 4; i++)
-         {
-            if (a.controllers[i].connected)
-               uinput_destroy(i, &a.controllers[i]);
-         }
-         libusb_close(a.handle);
-      }
+      remove_adapter(dev);
    }
 
    return 0;
+}
+
+static void quitting_signal(int sig)
+{
+   (void)sig;
+   quitting = 1;
 }
 
 int main(int argc, char *argv[])
 {
    struct udev *udev;
    struct udev_device *uinput;
+   struct sigaction sa;
+
+   memset(&sa, 0, sizeof(sa));
 
    if (argc > 1 && (strcmp(argv[1], "-r") == 0 || strcmp(argv[1], "--raw") == 0))
    {
@@ -568,11 +548,12 @@ int main(int argc, char *argv[])
       raw_mode = true;
    }
 
-   if (pthread_mutex_init(&adapter_mutex, NULL) < 0)
-   {
-      fprintf(stderr, "mutex/cond init errors\n");
-      return -1;
-   }
+   sa.sa_handler = quitting_signal;
+   sa.sa_flags = SA_RESTART | SA_RESETHAND;
+   sigemptyset(&sa.sa_mask);
+
+   sigaction(SIGINT, &sa, NULL);
+   sigaction(SIGTERM, &sa, NULL);
 
    udev = udev_new();
    if (udev == NULL) {
@@ -605,7 +586,7 @@ int main(int argc, char *argv[])
       struct libusb_device_descriptor desc;
       libusb_get_device_descriptor(devices[i], &desc);
       if (desc.idVendor == 0x057e && desc.idProduct == 0x0337)
-         hotplug_callback(NULL, devices[i], LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED, NULL);
+         add_adapter(devices[i]);
    }
 
    if (count > 0)
@@ -618,8 +599,11 @@ int main(int argc, char *argv[])
       fprintf(stderr, "cannot register hotplug callback, hotplugging not enabled\n");
 
    // pump events until shutdown & all helper threads finish cleaning up
-   while (!quitting || adapters_size > 0)
+   while (!quitting)
       libusb_handle_events_completed(NULL, (int *)&quitting);
+
+   while (adapters.next)
+      remove_adapter(adapters.next->device);
 
    if (hotplug_ret == 0)
       libusb_hotplug_deregister_callback(NULL, callback);
