@@ -1,0 +1,8 @@
+# This is some custom rules for udev to start a certain program when it detects
+# a Wii U Gamecube adapter.  Sadly, it currently doesn't work.
+# - Jason Anderson, December 12, 2014
+
+# I found this trick for running a script like this from this website:
+# http://askubuntu.com/questions/395733/automatically-disable-mouse-acceleration-whenever-mouse-is-plugged
+# - Jason Anderson, September 18, 2015
+SUBSYSTEM=="usb", ATTRS{idVendor}=="057e", ATTRS{idProduct}=="0337", MODE="0666", GROUP="uinput", SYMLINK+="input/wii-u-gc-adapter", RUN+="/usr/local/bin/run-wii-u-setup.sh"
