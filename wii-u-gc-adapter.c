@@ -94,6 +94,7 @@ struct adapter
 };
 
 static bool raw_mode;
+static bool debug_mode;
 
 static volatile int quitting;
 
@@ -468,7 +469,7 @@ static void add_adapter(struct libusb_device *dev)
 
    if (libusb_open(a->device, &a->handle) != 0)
    {
-      fprintf(stderr, "Error opening device 0x%p\n", a->device);
+      fprintf(stderr, "Error opening device %p\n", a->device);
       return;
    }
 
@@ -488,7 +489,7 @@ static void add_adapter(struct libusb_device *dev)
 
    pthread_create(&a->thread, NULL, adapter_thread, a);
 
-   fprintf(stderr, "adapter 0x%p connected\n", a->device);
+   fprintf(stderr, "adapter %p connected\n", a->device);
 }
 
 static void remove_adapter(struct libusb_device *dev)
@@ -540,12 +541,21 @@ int main(int argc, char *argv[])
    struct udev_device *uinput;
    struct sigaction sa;
 
+   fprintf(stderr, "Running wii-u-gc-adapter.  Use --raw for raw (non scaled) input.  Use --debug for debug mode.  Enjoy the games yo!\n");
+
    memset(&sa, 0, sizeof(sa));
 
-   if (argc > 1 && (strcmp(argv[1], "-r") == 0 || strcmp(argv[1], "--raw") == 0))
-   {
-      fprintf(stderr, "raw mode enabled\n");
-      raw_mode = true;
+   if(argc > 1) {
+      for (int i = 1; i < argc; i++)  {
+         if((strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--raw") == 0)  {
+            fprintf(stderr, "raw mode enabled\n");
+            raw_mode = true;
+         }
+         else if((strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--debug") == 0)  {
+            fprintf(stderr, "debug mode enabled\n");
+            debug_mode = true;
+         }
+      }
    }
 
    sa.sa_handler = quitting_signal;
@@ -581,10 +591,25 @@ int main(int argc, char *argv[])
 
    int count = libusb_get_device_list(NULL, &devices);
 
+   if(debug_mode == true)
+      fprintf(stderr,  "%d USB Device/s found\n", count);
+
    for (int i = 0; i < count; i++)
    {
       struct libusb_device_descriptor desc;
       libusb_get_device_descriptor(devices[i], &desc);
+
+      if(debug_mode == true)  { 
+         fprintf(stderr,  "Device #%d -- idVendor:%s;  idProduct:%s; \n", i, desc.idVendor, desc.idProduct); 
+
+         //If there is a manufacturer string, print that too
+         if(desc.iManufacturer != 0) {
+            unsigned char manufacturer[200];
+            libusb_get_string_descriptor_ascii(dev_handle, desc->iManufacturer, manufacturer,200);
+            fprintf(stderr, "Manufacturer: %s \n", manufacturer);
+         }
+
+      }
       if (desc.idVendor == 0x057e && desc.idProduct == 0x0337)
          add_adapter(devices[i]);
    }
