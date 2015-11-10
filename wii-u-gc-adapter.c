@@ -94,7 +94,7 @@ struct adapter
 };
 
 static bool raw_mode;
-static bool debug_mode;
+static bool debug_mode = false;
 
 static volatile int quitting;
 
@@ -469,7 +469,7 @@ static void add_adapter(struct libusb_device *dev)
 
    if (libusb_open(a->device, &a->handle) != 0)
    {
-      fprintf(stderr, "Error opening device %p\n", a->device);
+      fprintf(stderr, "Error opening device %p\n.  Try using $sudo ./wii-u-gc-adapter", a->device);
       return;
    }
 
@@ -547,11 +547,11 @@ int main(int argc, char *argv[])
 
    if(argc > 1) {
       for (int i = 1; i < argc; i++)  {
-         if((strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--raw") == 0)  {
+         if(strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--raw") == 0)  {
             fprintf(stderr, "raw mode enabled\n");
             raw_mode = true;
          }
-         else if((strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--debug") == 0)  {
+         else if(strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--debug") == 0)  {
             fprintf(stderr, "debug mode enabled\n");
             debug_mode = true;
          }
@@ -600,14 +600,14 @@ int main(int argc, char *argv[])
       libusb_get_device_descriptor(devices[i], &desc);
 
       if(debug_mode == true)  { 
-         fprintf(stderr,  "Device #%d -- idVendor:%s;  idProduct:%s; \n", i, desc.idVendor, desc.idProduct); 
+         fprintf(stderr,  "Device #%d -- idVendor:%p;  idProduct:%p; \n", i, desc.idVendor, desc.idProduct); 
 
          //If there is a manufacturer string, print that too
-         if(desc.iManufacturer != 0) {
-            unsigned char manufacturer[200];
-            libusb_get_string_descriptor_ascii(dev_handle, desc->iManufacturer, manufacturer,200);
-            fprintf(stderr, "Manufacturer: %s \n", manufacturer);
-         }
+         // if(desc.iManufacturer != 0) {
+         //    unsigned char manufacturer[200];
+         //    libusb_get_string_descriptor_ascii(dev_handle, desc->iManufacturer, manufacturer,200);
+         //    fprintf(stderr, "Manufacturer: %s \n", manufacturer);
+         // }
 
       }
       if (desc.idVendor == 0x057e && desc.idProduct == 0x0337)
