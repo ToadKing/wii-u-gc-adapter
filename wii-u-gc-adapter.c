@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
+#include <errno.h>
 
 #include <libudev.h>
 #include <libusb.h>
@@ -349,8 +350,20 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
       events[e_count].type = EV_SYN;
       events[e_count].code = SYN_REPORT;
       e_count++;
-      if (write(port->uinput, events, sizeof(events[0]) * e_count) != (int)sizeof(events[0]) * e_count)
-         fprintf(stderr, "Warning: writing input events failed\n");
+      size_t to_write = sizeof(events[0]) * e_count;
+      size_t written = 0;
+      while (written < to_write)
+      {
+         ssize_t write_ret = write(port->uinput, (const char*)events + written, to_write - written);
+         if (write_ret < 0)
+         {
+            char msg[128];
+            strerror_r(errno, msg, sizeof(msg));
+            fprintf(stderr, "Warning: writing input events failed: %s\n", msg);
+            break;
+         }
+         written += write_ret;
+      }
    }
 
    // check for rumble events
