@@ -40,3 +40,7 @@ Section "InputClass"
         Option "Ignore" "on"
 EndSection
 ````
+
+To properly run wii-u-gc-adapter when the adapter is plugged in, the following files have to be placed in certain directories.
+
+The file `88-wii-u-gamecube-adapter.rules` should be placed in `/etc/udev/rulles.d/`.  This file starts the script, `run-wii-u-setup.sh`, when the adapter is connected.  This script, in turn, runs the script `start-wii-u-adapter.sh`, and starts `wii-u-gc-adapter` in the background.  Both of these scripts should be made executable (`chmod +x run-wii-u-setup.sh start-wii-u-adapter.sh`) and placed in `/usr/local/bin/`.  With these files in place, along with the above xorg.conf rule, the Wii U Gamecube adapter should work.
