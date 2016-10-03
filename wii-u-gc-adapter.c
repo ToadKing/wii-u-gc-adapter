@@ -159,8 +159,8 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
       uinput_dev.absmin[ABS_Y]  = 0;  uinput_dev.absmax[ABS_Y]  = 255;
       uinput_dev.absmin[ABS_RX] = 0;  uinput_dev.absmax[ABS_RX] = 255;
       uinput_dev.absmin[ABS_RY] = 0;  uinput_dev.absmax[ABS_RY] = 255;
-      uinput_dev.absmin[ABS_THROTTLE]  = 0;  uinput_dev.absmax[ABS_THROTTLE]  = 255;
-      uinput_dev.absmin[ABS_RUDDER] = 0;  uinput_dev.absmax[ABS_RUDDER] = 255;
+      uinput_dev.absmin[ABS_THROTTLE]  = -255;  uinput_dev.absmax[ABS_THROTTLE]  = 255;
+      uinput_dev.absmin[ABS_RUDDER] = -255;  uinput_dev.absmax[ABS_RUDDER] = 255;
    }
    else
    {
@@ -168,8 +168,8 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
       uinput_dev.absmin[ABS_Y]  = 20; uinput_dev.absmax[ABS_Y]  = 235;
       uinput_dev.absmin[ABS_RX] = 30; uinput_dev.absmax[ABS_RX] = 225;
       uinput_dev.absmin[ABS_RY] = 30; uinput_dev.absmax[ABS_RY] = 225;
-      uinput_dev.absmin[ABS_THROTTLE]  = 25; uinput_dev.absmax[ABS_THROTTLE]  = 225;
-      uinput_dev.absmin[ABS_RUDDER] = 25; uinput_dev.absmax[ABS_RUDDER] = 225;
+      uinput_dev.absmin[ABS_THROTTLE]  = -225; uinput_dev.absmax[ABS_THROTTLE]  = 225; uinput_dev.absflat[ABS_THROTTLE] = 30;
+      uinput_dev.absmin[ABS_RUDDER] = -225; uinput_dev.absmax[ABS_RUDDER] = 225; uinput_dev.absflat[ABS_RUDDER] = 30;
    }
 #ifndef PAD_BTN
    uinput_dev.absmin[ABS_HAT0X]  = -1; uinput_dev.absmax[ABS_HAT0X]  = 1;
