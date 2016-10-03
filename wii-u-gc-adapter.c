@@ -35,17 +35,17 @@
 
 const int BUTTON_OFFSET_VALUES[16] = {
    BTN_START,
-   BTN_TR2,
+   BTN_Z,
    BTN_TR,
    BTN_TL,
    -1,
    -1,
    -1,
    -1,
-   BTN_SOUTH,
-   BTN_WEST,
-   BTN_EAST,
-   BTN_NORTH,
+   BTN_A,
+   BTN_B,
+   BTN_X,
+   BTN_Y,
    BTN_DPAD_LEFT,
    BTN_DPAD_RIGHT,
    BTN_DPAD_DOWN,
@@ -57,8 +57,8 @@ const int AXIS_OFFSET_VALUES[6] = {
    ABS_Y,
    ABS_RX,
    ABS_RY,
-   ABS_Z,
-   ABS_RZ
+   ABS_THROTTLE,
+   ABS_RUDDER
 };
 
 struct ff_event
@@ -124,10 +124,10 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
 
    // buttons
    ioctl(port->uinput, UI_SET_EVBIT, EV_KEY);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_NORTH);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_SOUTH);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_EAST);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_WEST);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_A);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_B);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_X);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_Y);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_START);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_DPAD_UP);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_DPAD_DOWN);
@@ -135,7 +135,7 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_DPAD_RIGHT);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_TL);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_TR);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_TR2);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_Z);
 
    // axis
    ioctl(port->uinput, UI_SET_EVBIT, EV_ABS);
@@ -143,8 +143,8 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    ioctl(port->uinput, UI_SET_ABSBIT, ABS_Y);
    ioctl(port->uinput, UI_SET_ABSBIT, ABS_RX);
    ioctl(port->uinput, UI_SET_ABSBIT, ABS_RY);
-   ioctl(port->uinput, UI_SET_ABSBIT, ABS_Z);
-   ioctl(port->uinput, UI_SET_ABSBIT, ABS_RZ);
+   ioctl(port->uinput, UI_SET_ABSBIT, ABS_THROTTLE);
+   ioctl(port->uinput, UI_SET_ABSBIT, ABS_RUDDER);
 
    if (raw_mode)
    {
@@ -152,8 +152,8 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
       uinput_dev.absmin[ABS_Y]  = 0;  uinput_dev.absmax[ABS_Y]  = 255;
       uinput_dev.absmin[ABS_RX] = 0;  uinput_dev.absmax[ABS_RX] = 255;
       uinput_dev.absmin[ABS_RY] = 0;  uinput_dev.absmax[ABS_RY] = 255;
-      uinput_dev.absmin[ABS_Z]  = 0;  uinput_dev.absmax[ABS_Z]  = 255;
-      uinput_dev.absmin[ABS_RZ] = 0;  uinput_dev.absmax[ABS_RZ] = 255;
+      uinput_dev.absmin[ABS_THROTTLE]  = 0;  uinput_dev.absmax[ABS_THROTTLE]  = 255;
+      uinput_dev.absmin[ABS_RUDDER] = 0;  uinput_dev.absmax[ABS_RUDDER] = 255;
    }
    else
    {
@@ -161,8 +161,8 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
       uinput_dev.absmin[ABS_Y]  = 20; uinput_dev.absmax[ABS_Y]  = 235;
       uinput_dev.absmin[ABS_RX] = 30; uinput_dev.absmax[ABS_RX] = 225;
       uinput_dev.absmin[ABS_RY] = 30; uinput_dev.absmax[ABS_RY] = 225;
-      uinput_dev.absmin[ABS_Z]  = 25; uinput_dev.absmax[ABS_Z]  = 225;
-      uinput_dev.absmin[ABS_RZ] = 25; uinput_dev.absmax[ABS_RZ] = 225;
+      uinput_dev.absmin[ABS_THROTTLE]  = 25; uinput_dev.absmax[ABS_THROTTLE]  = 225;
+      uinput_dev.absmin[ABS_RUDDER] = 25; uinput_dev.absmax[ABS_RUDDER] = 225;
    }
 
    // rumble
