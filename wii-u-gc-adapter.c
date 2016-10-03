@@ -481,13 +481,13 @@ static void add_adapter(struct libusb_device *dev)
 
    if (libusb_open(a->device, &a->handle) != 0)
    {
-      fprintf(stderr, "Error opening device 0x%p\n", a->device);
+      fprintf(stderr, "Error opening device %p\n", a->device);
       return;
    }
 
    if (libusb_kernel_driver_active(a->handle, 0) == 1 && libusb_detach_kernel_driver(a->handle, 0))
    {
-      fprintf(stderr, "Error detaching handle 0x%p from kernel\n", a->handle);
+      fprintf(stderr, "Error detaching handle %p from kernel\n", a->handle);
       return;
    }
 
@@ -501,7 +501,7 @@ static void add_adapter(struct libusb_device *dev)
 
    pthread_create(&a->thread, NULL, adapter_thread, a);
 
-   fprintf(stderr, "adapter 0x%p connected\n", a->device);
+   fprintf(stderr, "adapter %p connected\n", a->device);
 }
 
 static void remove_adapter(struct libusb_device *dev)
@@ -513,7 +513,7 @@ static void remove_adapter(struct libusb_device *dev)
       {
          a->next->quitting = true;
          pthread_join(a->next->thread, NULL);
-         fprintf(stderr, "adapter 0x%p disconnected\n", a->next->device);
+         fprintf(stderr, "adapter %p disconnected\n", a->next->device);
          libusb_close(a->next->handle);
          struct adapter *new_next = a->next->next;
          free(a->next);
