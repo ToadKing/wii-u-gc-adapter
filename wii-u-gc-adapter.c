@@ -32,20 +32,21 @@
 #define STATE_WAVEBIRD 0x20
 
 #define MAX_FF_EVENTS 4
+/* #undef PAD_BTN */
 
 const int BUTTON_OFFSET_VALUES[16] = {
    BTN_START,
-   BTN_TR2,
+   BTN_Z,
    BTN_TR,
    BTN_TL,
    -1,
    -1,
    -1,
    -1,
-   BTN_SOUTH,
-   BTN_WEST,
-   BTN_EAST,
-   BTN_NORTH,
+   BTN_A,
+   BTN_B,
+   BTN_X,
+   BTN_Y,
    BTN_DPAD_LEFT,
    BTN_DPAD_RIGHT,
    BTN_DPAD_DOWN,
@@ -57,8 +58,8 @@ const int AXIS_OFFSET_VALUES[6] = {
    ABS_Y,
    ABS_RX,
    ABS_RY,
-   ABS_Z,
-   ABS_RZ
+   ABS_THROTTLE,
+   ABS_RUDDER
 };
 
 struct ff_event
@@ -124,18 +125,20 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
 
    // buttons
    ioctl(port->uinput, UI_SET_EVBIT, EV_KEY);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_NORTH);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_SOUTH);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_EAST);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_WEST);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_A);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_B);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_X);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_Y);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_START);
+#ifdef PAD_BTN
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_DPAD_UP);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_DPAD_DOWN);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_DPAD_LEFT);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_DPAD_RIGHT);
+#endif
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_TL);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_TR);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_TR2);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_Z);
 
    // axis
    ioctl(port->uinput, UI_SET_EVBIT, EV_ABS);
@@ -143,8 +146,12 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    ioctl(port->uinput, UI_SET_ABSBIT, ABS_Y);
    ioctl(port->uinput, UI_SET_ABSBIT, ABS_RX);
    ioctl(port->uinput, UI_SET_ABSBIT, ABS_RY);
-   ioctl(port->uinput, UI_SET_ABSBIT, ABS_Z);
-   ioctl(port->uinput, UI_SET_ABSBIT, ABS_RZ);
+   ioctl(port->uinput, UI_SET_ABSBIT, ABS_THROTTLE);
+   ioctl(port->uinput, UI_SET_ABSBIT, ABS_RUDDER);
+#ifndef PAD_BTN
+   ioctl(port->uinput, UI_SET_ABSBIT, ABS_HAT0X);
+   ioctl(port->uinput, UI_SET_ABSBIT, ABS_HAT0Y);
+#endif
 
    if (raw_mode)
    {
@@ -152,8 +159,8 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
       uinput_dev.absmin[ABS_Y]  = 0;  uinput_dev.absmax[ABS_Y]  = 255;
       uinput_dev.absmin[ABS_RX] = 0;  uinput_dev.absmax[ABS_RX] = 255;
       uinput_dev.absmin[ABS_RY] = 0;  uinput_dev.absmax[ABS_RY] = 255;
-      uinput_dev.absmin[ABS_Z]  = 0;  uinput_dev.absmax[ABS_Z]  = 255;
-      uinput_dev.absmin[ABS_RZ] = 0;  uinput_dev.absmax[ABS_RZ] = 255;
+      uinput_dev.absmin[ABS_THROTTLE]  = -255;  uinput_dev.absmax[ABS_THROTTLE]  = 255;
+      uinput_dev.absmin[ABS_RUDDER] = -255;  uinput_dev.absmax[ABS_RUDDER] = 255;
    }
    else
    {
@@ -161,9 +168,13 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
       uinput_dev.absmin[ABS_Y]  = 20; uinput_dev.absmax[ABS_Y]  = 235;
       uinput_dev.absmin[ABS_RX] = 30; uinput_dev.absmax[ABS_RX] = 225;
       uinput_dev.absmin[ABS_RY] = 30; uinput_dev.absmax[ABS_RY] = 225;
-      uinput_dev.absmin[ABS_Z]  = 25; uinput_dev.absmax[ABS_Z]  = 225;
-      uinput_dev.absmin[ABS_RZ] = 25; uinput_dev.absmax[ABS_RZ] = 225;
+      uinput_dev.absmin[ABS_THROTTLE]  = -225; uinput_dev.absmax[ABS_THROTTLE]  = 225; uinput_dev.absflat[ABS_THROTTLE] = 30;
+      uinput_dev.absmin[ABS_RUDDER] = -225; uinput_dev.absmax[ABS_RUDDER] = 225; uinput_dev.absflat[ABS_RUDDER] = 30;
    }
+#ifndef PAD_BTN
+   uinput_dev.absmin[ABS_HAT0X]  = -1; uinput_dev.absmax[ABS_HAT0X]  = 1;
+   uinput_dev.absmin[ABS_HAT0Y]  = -1; uinput_dev.absmax[ABS_HAT0Y]  = 1;
+#endif
 
    // rumble
    ioctl(port->uinput, UI_SET_EVBIT, EV_FF);
@@ -171,7 +182,11 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    ioctl(port->uinput, UI_SET_FFBIT, FF_RUMBLE);
    uinput_dev.ff_effects_max = MAX_FF_EVENTS;
 
-   snprintf(uinput_dev.name, sizeof(uinput_dev.name), "Wii U GameCube Adapter Port %d", i+1);
+#ifdef PAD_BTN
+   snprintf(uinput_dev.name, sizeof(uinput_dev.name), "Wii U GameCube AbsAdpt Port %d", i+1);
+#else
+   snprintf(uinput_dev.name, sizeof(uinput_dev.name), "Wii U GameCube HatAdpt Port %d", i+1);
+#endif
    uinput_dev.name[sizeof(uinput_dev.name)-1] = 0;
    uinput_dev.id.bustype = BUS_USB;
    if (write(port->uinput, &uinput_dev, sizeof(uinput_dev)) != sizeof(uinput_dev))
@@ -319,9 +334,30 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
 
       if ((port->buttons & mask) != pressed)
       {
-         events[e_count].type = EV_KEY;
-         events[e_count].code = BUTTON_OFFSET_VALUES[j];
-         events[e_count].value = (pressed == 0) ? 0 : 1;
+#ifndef PAD_BTN
+	 switch (BUTTON_OFFSET_VALUES[j]) {
+	    case BTN_DPAD_RIGHT:
+	    case BTN_DPAD_LEFT:
+	    case BTN_DPAD_DOWN:
+	    case BTN_DPAD_UP:
+	       events[e_count].type = EV_ABS;
+	       events[e_count].code = (BUTTON_OFFSET_VALUES[j] == BTN_DPAD_UP || BUTTON_OFFSET_VALUES[j] == BTN_DPAD_DOWN)
+		  ? ABS_HAT0Y : ABS_HAT0X;
+	       events[e_count].value = (BUTTON_OFFSET_VALUES[j] == BTN_DPAD_UP || BUTTON_OFFSET_VALUES[j] == BTN_DPAD_LEFT)
+		  ? (pressed == 0) ? 0 : -1 : (pressed == 0) ? 0 : 1;
+	       break;
+	    default:
+#endif
+
+	       events[e_count].type = EV_KEY;
+	       events[e_count].code = BUTTON_OFFSET_VALUES[j];
+	       events[e_count].value = (pressed == 0) ? 0 : 1;
+
+#ifndef PAD_BTN
+	       break;
+	 }
+#endif
+
          e_count++;
          port->buttons &= ~mask;
          port->buttons |= pressed;
@@ -481,13 +517,13 @@ static void add_adapter(struct libusb_device *dev)
 
    if (libusb_open(a->device, &a->handle) != 0)
    {
-      fprintf(stderr, "Error opening device 0x%p\n", a->device);
+      fprintf(stderr, "Error opening device %p\n", a->device);
       return;
    }
 
    if (libusb_kernel_driver_active(a->handle, 0) == 1 && libusb_detach_kernel_driver(a->handle, 0))
    {
-      fprintf(stderr, "Error detaching handle 0x%p from kernel\n", a->handle);
+      fprintf(stderr, "Error detaching handle %p from kernel\n", a->handle);
       return;
    }
 
@@ -501,7 +537,7 @@ static void add_adapter(struct libusb_device *dev)
 
    pthread_create(&a->thread, NULL, adapter_thread, a);
 
-   fprintf(stderr, "adapter 0x%p connected\n", a->device);
+   fprintf(stderr, "adapter %p connected\n", a->device);
 }
 
 static void remove_adapter(struct libusb_device *dev)
@@ -513,7 +549,7 @@ static void remove_adapter(struct libusb_device *dev)
       {
          a->next->quitting = true;
          pthread_join(a->next->thread, NULL);
-         fprintf(stderr, "adapter 0x%p disconnected\n", a->next->device);
+         fprintf(stderr, "adapter %p disconnected\n", a->next->device);
          libusb_close(a->next->handle);
          struct adapter *new_next = a->next->next;
          free(a->next);
