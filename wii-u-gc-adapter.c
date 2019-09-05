@@ -303,8 +303,7 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
       port->type = type;
    }
 
-   struct input_event events[12+6+1]; // buttons + axis + syn event
-   memset(&events, 0, sizeof(events));
+   struct input_event events[12+6+1] = {0}; // buttons + axis + syn event
    int e_count = 0;
 
    uint16_t btns = (uint16_t) payload[1] << 8 | (uint16_t) payload[2];
@@ -420,11 +419,30 @@ static void *adapter_thread(void *data)
 {
    struct adapter *a = (struct adapter *)data;
 
+    int bytes_transferred;
+    unsigned char payload[1] = { 0x13 };
+
+    int transfer_ret = libusb_interrupt_transfer(a->handle, EP_OUT, payload, sizeof(payload), &bytes_transferred, 0);
+
+    if (transfer_ret != 0) {
+        fprintf(stderr, "libusb_interrupt_transfer: %s\n", libusb_error_name(transfer_ret));
+        return NULL;
+    }
+    if (bytes_transferred != sizeof(payload)) {
+        fprintf(stderr, "libusb_interrupt_transfer %d/%d bytes transferred.\n", bytes_transferred, sizeof(payload));
+        return NULL;
+    }
+
    while (!a->quitting)
    {
       unsigned char payload[37];
       int size = 0;
-      libusb_interrupt_transfer(a->handle, EP_IN, payload, sizeof(payload), &size, 0);
+      int transfer_ret = libusb_interrupt_transfer(a->handle, EP_IN, payload, sizeof(payload), &size, 0);
+      if (transfer_ret != 0) {
+         fprintf(stderr, "libusb_interrupt_transfer error %d\n", transfer_ret);
+         a->quitting = true;
+         break;
+      }
       if (size != 37 || payload[0] != 0x21)
          continue;
       
@@ -456,7 +474,12 @@ static void *adapter_thread(void *data)
       if (memcmp(rumble, a->rumble, sizeof(rumble)) != 0)
       {
          memcpy(a->rumble, rumble, sizeof(rumble));
-         libusb_interrupt_transfer(a->handle, EP_OUT, a->rumble, sizeof(a->rumble), &size, 0);
+         transfer_ret = libusb_interrupt_transfer(a->handle, EP_OUT, a->rumble, sizeof(a->rumble), &size, 0);
+         if (transfer_ret != 0) {
+            fprintf(stderr, "libusb_interrupt_transfer error %d\n", transfer_ret);
+            a->quitting = true;
+            break;
+         }
       }
    }
 
@@ -471,7 +494,7 @@ static void *adapter_thread(void *data)
 
 static void add_adapter(struct libusb_device *dev)
 {
-   struct adapter *a = (struct adapter *)calloc(1, sizeof(struct adapter));
+   struct adapter *a = calloc(1, sizeof(struct adapter));
    if (a == NULL)
    {
       fprintf(stderr, "FATAL: calloc() failed");
@@ -485,15 +508,13 @@ static void add_adapter(struct libusb_device *dev)
       return;
    }
 
-   if (libusb_kernel_driver_active(a->handle, 0) == 1 && libusb_detach_kernel_driver(a->handle, 0))
-   {
-      fprintf(stderr, "Error detaching handle 0x%p from kernel\n", a->handle);
-      return;
+   if (libusb_kernel_driver_active(a->handle, 0) == 1) {
+       fprintf(stderr, "Detaching kernel driver\n");
+       if (libusb_detach_kernel_driver(a->handle, 0)) {
+           fprintf(stderr, "Error detaching handle 0x%p from kernel\n", a->handle);
+           return;
+       }
    }
-
-   int tmp;
-   unsigned char payload[1] = { 0x13 };
-   libusb_interrupt_transfer(a->handle, EP_OUT, payload, sizeof(payload), &tmp, 0);
 
    struct adapter *old_head = adapters.next;
    adapters.next = a;
@@ -525,7 +546,7 @@ static void remove_adapter(struct libusb_device *dev)
    }
 }
 
-static int hotplug_callback(struct libusb_context *ctx, struct libusb_device *dev, libusb_hotplug_event event, void *user_data)
+static int LIBUSB_CALL hotplug_callback(struct libusb_context *ctx, struct libusb_device *dev, libusb_hotplug_event event, void *user_data)
 {
    (void)ctx;
    (void)user_data;
@@ -605,10 +626,15 @@ int main(int argc, char *argv[])
    if (count > 0)
       libusb_free_device_list(devices, 1);
 
-   libusb_hotplug_callback_handle callback;
-   int hotplug_ret = libusb_hotplug_register_callback(NULL, LIBUSB_HOTPLUG_MATCH_ANY, 0, 0x057e, 0x0337, LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, &callback);
+   if (libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG) == 0)
+      fprintf(stderr, "missing hotplugging capability.\n");
 
-   if (hotplug_ret != 0)
+   libusb_hotplug_callback_handle callback;
+   int hotplug_ret = libusb_hotplug_register_callback(NULL,
+           LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT, LIBUSB_HOTPLUG_NO_FLAGS,
+           0x057e, 0x0337, LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, &callback);
+
+   if (hotplug_ret != LIBUSB_SUCCESS)
       fprintf(stderr, "cannot register hotplug callback, hotplugging not enabled\n");
 
    // pump events until shutdown & all helper threads finish cleaning up
