@@ -240,15 +240,7 @@ static void update_ff_start_stop(struct ff_event *e, struct timespec *current_ti
    else
    {
       e->start_time = ts_add(current_time, e->delay);
-      if (e->duration == 0)
-      {
-         e->end_time.tv_sec = INT_MAX;
-         e->end_time.tv_nsec = 999999999L;
-      }
-      else
-      {
-         e->end_time = ts_add(&e->start_time, e->duration);
-      }
+      e->end_time = ts_add(&e->start_time, e->duration);
    }
 }
 
