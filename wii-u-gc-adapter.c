@@ -626,16 +626,20 @@ int main(int argc, char *argv[])
    if (count > 0)
       libusb_free_device_list(devices, 1);
 
-   if (libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG) == 0)
-      fprintf(stderr, "missing hotplugging capability.\n");
-
    libusb_hotplug_callback_handle callback;
-   int hotplug_ret = libusb_hotplug_register_callback(NULL,
-           LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT, LIBUSB_HOTPLUG_NO_FLAGS,
-           0x057e, 0x0337, LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, &callback);
 
-   if (hotplug_ret != LIBUSB_SUCCESS)
-      fprintf(stderr, "cannot register hotplug callback, hotplugging not enabled\n");
+   int hotplug_capability = libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG);
+   if (hotplug_capability) {
+       int hotplug_ret = libusb_hotplug_register_callback(NULL,
+             LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
+             LIBUSB_HOTPLUG_NO_FLAGS, 0x057e, 0x0337,
+             LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, &callback);
+
+       if (hotplug_ret != LIBUSB_SUCCESS) {
+           fprintf(stderr, "cannot register hotplug callback, hotplugging not enabled\n");
+           hotplug_capability = 0;
+       }
+   }
 
    // pump events until shutdown & all helper threads finish cleaning up
    while (!quitting)
@@ -644,7 +648,7 @@ int main(int argc, char *argv[])
    while (adapters.next)
       remove_adapter(adapters.next->device);
 
-   if (hotplug_ret == 0)
+   if (hotplug_capability)
       libusb_hotplug_deregister_callback(NULL, callback);
 
    libusb_exit(NULL);
