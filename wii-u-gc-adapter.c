@@ -454,7 +454,7 @@ static void *adapter_thread(void *data)
 
       unsigned char rumble[5] = { 0x11, 0, 0, 0, 0 };
       struct timespec current_time = { 0 };
-      clock_gettime(CLOCK_REALTIME, &current_time);
+      clock_gettime(CLOCK_MONOTONIC_RAW, &current_time);
       for (int i = 0; i < 4; i++, controller += 9)
       {
          handle_payload(i, &a->controllers[i], controller, &current_time);
