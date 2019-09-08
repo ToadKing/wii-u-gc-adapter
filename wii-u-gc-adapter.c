@@ -167,7 +167,10 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
 
    // rumble
    ioctl(port->uinput, UI_SET_EVBIT, EV_FF);
-   ioctl(port->uinput, UI_SET_FFBIT, FF_CONSTANT);
+   ioctl(port->uinput, UI_SET_FFBIT, FF_PERIODIC);
+   ioctl(port->uinput, UI_SET_FFBIT, FF_SQUARE);
+   ioctl(port->uinput, UI_SET_FFBIT, FF_TRIANGLE);
+   ioctl(port->uinput, UI_SET_FFBIT, FF_SINE);
    ioctl(port->uinput, UI_SET_FFBIT, FF_RUMBLE);
    uinput_dev.ff_effects_max = MAX_FF_EVENTS;
 
@@ -240,7 +243,7 @@ static void update_ff_start_stop(struct ff_event *e, struct timespec *current_ti
    else
    {
       e->start_time = ts_add(current_time, e->delay);
-      if (e->duration == 0)
+      if (e->forever)
       {
          e->end_time.tv_sec = INT_MAX;
          e->end_time.tv_nsec = 999999999L;
@@ -256,6 +259,7 @@ static int create_ff_event(struct ports *port, struct uinput_ff_upload *upload)
 {
    if (upload->old.type != 0)
    {
+      // events with length 0 last forever
       port->ff_events[upload->old.id].forever = (upload->effect.replay.length == 0);
       port->ff_events[upload->old.id].duration = upload->effect.replay.length;
       port->ff_events[upload->old.id].delay = upload->effect.replay.delay;
@@ -445,7 +449,7 @@ static void *adapter_thread(void *data)
       }
       if (size != 37 || payload[0] != 0x21)
          continue;
-      
+
       unsigned char *controller = &payload[1];
 
       unsigned char rumble[5] = { 0x11, 0, 0, 0, 0 };
@@ -462,9 +466,12 @@ static void *adapter_thread(void *data)
                struct ff_event *e = &a->controllers[i].ff_events[j];
                if (e->in_use)
                {
-                  if (ts_lessthan(&e->start_time, &current_time) && ts_greaterthan(&e->end_time, &current_time))
+                  bool after_start = ts_lessthan(&e->start_time, &current_time);
+                  bool before_end = ts_greaterthan(&e->end_time, &current_time);
+
+                  if (after_start && before_end)
                      rumble[i+1] = 1;
-                  else
+                  else if (after_start && !before_end)
                      update_ff_start_stop(e, &current_time);
                }
             }
