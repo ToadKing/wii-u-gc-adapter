@@ -639,7 +639,7 @@ int main(int argc, char *argv[])
    if (hotplug_capability) {
        int hotplug_ret = libusb_hotplug_register_callback(NULL,
              LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
-             LIBUSB_HOTPLUG_NO_FLAGS, 0x057e, 0x0337,
+             0, 0x057e, 0x0337,
              LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, &callback);
 
        if (hotplug_ret != LIBUSB_SUCCESS) {
