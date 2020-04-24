@@ -30,6 +30,7 @@ Quirks
 * Input ranges on the sticks/analog triggers are scaled to try to match the
   physical ranges of the controls. To remove this scaling run the program with
   the `--raw` flag.
+* If needed to make sticks work in the range from -128 to 128 use the `--relative` flag. In can be handy if a contoller used in rpcs3 emulator
 * If all your controllers start messing with the mouse cursor, you can fix
   them with this xorg.conf rule. (You can place it in a file in xorg.conf.d)
 
