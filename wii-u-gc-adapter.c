@@ -123,6 +123,7 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    struct uinput_user_dev uinput_dev;
    memset(&uinput_dev, 0, sizeof(uinput_dev));
    port->uinput = open(uinput_path, O_RDWR | O_NONBLOCK);
+   fprintf(stderr, uinput_path);
 
    // buttons
    ioctl(port->uinput, UI_SET_EVBIT, EV_KEY);
