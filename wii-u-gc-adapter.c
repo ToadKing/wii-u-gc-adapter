@@ -557,9 +557,11 @@ static void *adapter_thread(void *data)
    return NULL;
 }
 
-static void add_adapter(struct libusb_device *dev)
+static void add_adapter(struct libusb_device *const dev)
 {
-   struct adapter *a = calloc(1, sizeof(struct adapter));
+   fprintf(stderr, "Found an adapter! Attempting to connect...\n");
+
+   struct adapter *const a = calloc(1, sizeof(struct adapter));
    if (a == NULL)
    {
       fprintf(stderr, "FATAL: calloc() failed");
@@ -581,7 +583,8 @@ static void add_adapter(struct libusb_device *dev)
        }
    }
 
-   struct adapter *old_head = adapters.next;
+   //Add adapter to linked list of adapters
+   struct adapter *const old_head = adapters.next;
    adapters.next = a;
    a->next = old_head;
 
