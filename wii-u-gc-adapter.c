@@ -2,20 +2,20 @@
 
 #define _XOPEN_SOURCE 600
 
-#include <time.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <signal.h>
-#include <errno.h>
 
 #include <libudev.h>
 #include <libusb.h>
@@ -25,13 +25,31 @@
 #error libusb(x) 1.0.16 or higher is required
 #endif
 
-#define EP_IN  0x81
-#define EP_OUT 0x02
+//Adapter's USB Info
+const int VENDOR_ID  = 0x057e;
+const int PRODUCT_ID = 0x0337;
+
+//USB endpoints. Find with, e.g., `lsusb -v -d 057e:0337`
+const unsigned char EP_IN  = 0x81;
+const unsigned char EP_OUT = 0x02;
+const int COMM_OUT_PAYLOAD_SIZE = 37;
+
+//USB configuration
+const uint32_t COMM_TIMEOUT = 100; //milliseconds
 
 #define STATE_NORMAL   0x10
 #define STATE_WAVEBIRD 0x20
 
 #define MAX_FF_EVENTS 4
+
+//Communication codes
+const unsigned char COMM_ENABLE_ADAPTER = 0x13;
+
+enum COMM_RECEIVE_TYPES {
+   RX_FATAL,
+   RX_SKIP,
+   RX_GOOD
+};
 
 const int BUTTON_OFFSET_VALUES[16] = {
    BTN_START,
@@ -419,36 +437,75 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
    }
 }
 
+
+
+bool send_to_adapter(const struct adapter *a, unsigned char payload[5]){
+   int bytes_transferred;
+   const int transfer_ret = libusb_interrupt_transfer(a->handle, EP_OUT, payload, 5, &bytes_transferred, 0);
+
+   if (transfer_ret != LIBUSB_SUCCESS ) {
+      fprintf(stderr, "libusb_interrupt_transfer (%d): %s\n", __LINE__, libusb_error_name(transfer_ret));
+      return false;
+   }
+   if (bytes_transferred != 5) {
+      fprintf(stderr, "libusb_interrupt_transfer (%d) %d/%d bytes transferred.\n", __LINE__, bytes_transferred, 5);
+      return false;
+   }
+
+   return true;
+}
+
+
+
+int receive_from_adapter(struct adapter *a, unsigned char payload[COMM_OUT_PAYLOAD_SIZE]){
+   int bytes_received = 0;
+   
+   int transfer_ret = libusb_interrupt_transfer(
+      a->handle, EP_IN, payload, COMM_OUT_PAYLOAD_SIZE, &bytes_received, COMM_TIMEOUT
+   );
+   
+   if (transfer_ret == LIBUSB_ERROR_TIMEOUT ) {
+      fprintf(stderr, "libusb_interrupt_transfer error (%d): LIBUSB_ERROR_TIMEOUT\n", __LINE__);         
+      return RX_FATAL;
+   }
+   
+   if (transfer_ret != LIBUSB_SUCCESS ) {
+      fprintf(stderr, "libusb_interrupt_transfer error (%d) %d\n", __LINE__, transfer_ret);
+      a->quitting = true;
+      return RX_FATAL;
+   }
+   
+   if (bytes_received != COMM_OUT_PAYLOAD_SIZE || payload[0] != 0x21)
+      return RX_SKIP;
+
+   return RX_GOOD;
+}
+
+
+
 static void *adapter_thread(void *data)
 {
    struct adapter *a = (struct adapter *)data;
 
-    int bytes_transferred;
-    unsigned char payload[1] = { 0x13 };
-
-    int transfer_ret = libusb_interrupt_transfer(a->handle, EP_OUT, payload, sizeof(payload), &bytes_transferred, 0);
-
-    if (transfer_ret != 0) {
-        fprintf(stderr, "libusb_interrupt_transfer: %s\n", libusb_error_name(transfer_ret));
-        return NULL;
-    }
-    if (bytes_transferred != sizeof(payload)) {
-        fprintf(stderr, "libusb_interrupt_transfer %d/%d bytes transferred.\n", bytes_transferred, sizeof(payload));
-        return NULL;
-    }
+   //Enable the adapter
+   {
+      unsigned char payload[5] = {COMM_ENABLE_ADAPTER};
+      if(!send_to_adapter(a, payload)){
+         return NULL;
+      }
+   }
 
    while (!a->quitting)
    {
       unsigned char payload[37];
-      int size = 0;
-      int transfer_ret = libusb_interrupt_transfer(a->handle, EP_IN, payload, sizeof(payload), &size, 0);
-      if (transfer_ret != 0) {
-         fprintf(stderr, "libusb_interrupt_transfer error %d\n", transfer_ret);
-         a->quitting = true;
+      const int receive_status = receive_from_adapter(a, payload);
+      if(receive_status==RX_FATAL)
          break;
-      }
-      if (size != 37 || payload[0] != 0x21)
+      else if(receive_status==RX_SKIP)
          continue;
+      else if(receive_status==RX_GOOD){
+         //Keep going
+      }
 
       unsigned char *controller = &payload[1];
 
@@ -481,8 +538,9 @@ static void *adapter_thread(void *data)
       if (memcmp(rumble, a->rumble, sizeof(rumble)) != 0)
       {
          memcpy(a->rumble, rumble, sizeof(rumble));
-         transfer_ret = libusb_interrupt_transfer(a->handle, EP_OUT, a->rumble, sizeof(a->rumble), &size, 0);
-         if (transfer_ret != 0) {
+         int bytes_received;
+         int transfer_ret = libusb_interrupt_transfer(a->handle, EP_OUT, a->rumble, sizeof(a->rumble), &bytes_received, 0);
+         if (transfer_ret != LIBUSB_SUCCESS ) {
             fprintf(stderr, "libusb_interrupt_transfer error %d\n", transfer_ret);
             a->quitting = true;
             break;
@@ -499,37 +557,67 @@ static void *adapter_thread(void *data)
    return NULL;
 }
 
-static void add_adapter(struct libusb_device *dev)
+static void add_adapter(struct libusb_device *const dev)
 {
-   struct adapter *a = calloc(1, sizeof(struct adapter));
+   fprintf(stderr, "Found an adapter! Attempting to connect...\n");
+
+   struct adapter *const a = calloc(1, sizeof(struct adapter));
    if (a == NULL)
    {
-      fprintf(stderr, "FATAL: calloc() failed");
+      fprintf(stderr, "FATAL (%d): Failed to allocate memory for an adapter!", __LINE__);
       exit(-1);
    }
    a->device = dev;
 
-   if (libusb_open(a->device, &a->handle) != 0)
+   if (libusb_open(a->device, &a->handle) != LIBUSB_SUCCESS)
    {
-      fprintf(stderr, "Error opening device 0x%p\n", a->device);
+      fprintf(stderr, "Error (%d): Problem opening device 0x%p\n", __LINE__, a->device);
       return;
    }
 
-   if (libusb_kernel_driver_active(a->handle, 0) == 1) {
+   const int is_kernel_driver_active = libusb_kernel_driver_active(a->handle, 0);
+   if (is_kernel_driver_active == 1) {
        fprintf(stderr, "Detaching kernel driver\n");
        if (libusb_detach_kernel_driver(a->handle, 0)) {
-           fprintf(stderr, "Error detaching handle 0x%p from kernel\n", a->handle);
+           fprintf(stderr, "Error (%d): Problem detaching handle 0x%p from kernel\n", __LINE__, a->handle);
            return;
        }
+   } else if (is_kernel_driver_active==0){
+      fprintf(stderr, "No kernel driver was active for this adapter - good.\n");      
+   } else {
+      fprintf(stderr, "Could not determine if a kernel driver was already active for the adapter! (Error: %d)\n", is_kernel_driver_active);
+      return;
    }
 
-   struct adapter *old_head = adapters.next;
+   //Add adapter to linked list of adapters
+   struct adapter *const old_head = adapters.next;
    adapters.next = a;
    a->next = old_head;
 
-   pthread_create(&a->thread, NULL, adapter_thread, a);
+   //Pretty print some info about the adapter we've just got
+   struct libusb_device_descriptor desc;
+   libusb_get_device_descriptor(a->device, &desc);
 
-   fprintf(stderr, "adapter 0x%p connected\n", a->device);
+   unsigned char manufacturer_name[200] = {0};
+   unsigned char product_name[200] = {0};
+   int retcode;
+   if((retcode=libusb_get_string_descriptor_ascii(a->handle, desc.iManufacturer, manufacturer_name, sizeof(manufacturer_name)))<0){
+      fprintf(stderr, "Failed to get manufacturer string: %s!\n", libusb_strerror(retcode));
+   }
+   if((retcode=libusb_get_string_descriptor_ascii(a->handle, desc.idProduct, product_name, sizeof(product_name)))<0){
+      fprintf(stderr, "Failed to get product string: %s!\n", libusb_strerror(retcode));      
+   }
+
+   fprintf(stderr, "adapter 0x%p connected! Vendor: %04x, Product: %04x (%s), Manufacturer: %x (%s) \n", 
+      a->device, 
+      desc.idVendor,
+      desc.idProduct,
+      product_name,
+      desc.iManufacturer,
+      manufacturer_name);
+
+   //Start a thread to manage the adapter
+   pthread_create(&a->thread, NULL, adapter_thread, a);
 }
 
 static void remove_adapter(struct libusb_device *dev)
@@ -575,13 +663,76 @@ static void quitting_signal(int sig)
    quitting = 1;
 }
 
+void add_adapters_that_are_already_plugged_in(){
+   fprintf(stderr, "Checking through devices that are already plugged in\n");
+
+   struct libusb_device **devices;
+
+   //Get a list of devices
+   const int count = libusb_get_device_list(NULL, &devices);
+
+   //No devices found
+   if(count==0)
+      return;
+
+   for (int i = 0; i < count; i++)
+   {
+      struct libusb_device_descriptor desc;
+      libusb_get_device_descriptor(devices[i], &desc);
+      if (desc.idVendor == VENDOR_ID && desc.idProduct == PRODUCT_ID){
+         //Adapter was found, let's get a reference to it and add it to our list
+         //of adapters
+         add_adapter(devices[i]);
+      }
+   }
+
+   //Free list of devices, decrementing their references
+   libusb_free_device_list(devices, 1);
+}
+
+
+
+bool setup_hotplugging(libusb_hotplug_callback_handle *callback){
+   fprintf(stderr, "Preparing hotplugging\n");
+
+   int hotplug_capability = libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG);
+   if (hotplug_capability) {
+      const int hotplug_ret = libusb_hotplug_register_callback(NULL,
+            LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
+            0, VENDOR_ID, PRODUCT_ID,
+            LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, callback);
+
+      if (hotplug_ret != LIBUSB_SUCCESS) {
+         fprintf(stderr, "cannot register hotplug callback, hotplugging not enabled\n");
+         return false;
+      }
+
+      return true;
+   }
+
+   return false;
+}
+
+
+
+void setup_signal_catching(){
+   struct sigaction sa;
+   memset(&sa, 0, sizeof(sa));
+
+   sa.sa_handler = quitting_signal;
+   sa.sa_flags = SA_RESTART | SA_RESETHAND;
+   sigemptyset(&sa.sa_mask);
+   
+   sigaction(SIGINT, &sa, NULL);
+   sigaction(SIGTERM, &sa, NULL);
+}
+
+
+
 int main(int argc, char *argv[])
 {
    struct udev *udev;
    struct udev_device *uinput;
-   struct sigaction sa;
-
-   memset(&sa, 0, sizeof(sa));
 
    if (argc > 1 && (strcmp(argv[1], "-r") == 0 || strcmp(argv[1], "--raw") == 0))
    {
@@ -589,12 +740,8 @@ int main(int argc, char *argv[])
       raw_mode = true;
    }
 
-   sa.sa_handler = quitting_signal;
-   sa.sa_flags = SA_RESTART | SA_RESETHAND;
-   sigemptyset(&sa.sa_mask);
-
-   sigaction(SIGINT, &sa, NULL);
-   sigaction(SIGTERM, &sa, NULL);
+   //Set up signal catching so we can exit gracefully
+   setup_signal_catching();
 
    udev = udev_new();
    if (udev == NULL) {
@@ -618,35 +765,10 @@ int main(int argc, char *argv[])
 
    libusb_init(NULL);
 
-   struct libusb_device **devices;
-
-   int count = libusb_get_device_list(NULL, &devices);
-
-   for (int i = 0; i < count; i++)
-   {
-      struct libusb_device_descriptor desc;
-      libusb_get_device_descriptor(devices[i], &desc);
-      if (desc.idVendor == 0x057e && desc.idProduct == 0x0337)
-         add_adapter(devices[i]);
-   }
-
-   if (count > 0)
-      libusb_free_device_list(devices, 1);
+   add_adapters_that_are_already_plugged_in();
 
    libusb_hotplug_callback_handle callback;
-
-   int hotplug_capability = libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG);
-   if (hotplug_capability) {
-       int hotplug_ret = libusb_hotplug_register_callback(NULL,
-             LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
-             0, 0x057e, 0x0337,
-             LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, &callback);
-
-       if (hotplug_ret != LIBUSB_SUCCESS) {
-           fprintf(stderr, "cannot register hotplug callback, hotplugging not enabled\n");
-           hotplug_capability = 0;
-       }
-   }
+   bool hotplug_capability = setup_hotplugging(&callback);
 
    // pump events until shutdown & all helper threads finish cleaning up
    while (!quitting)
@@ -661,5 +783,6 @@ int main(int argc, char *argv[])
    libusb_exit(NULL);
    udev_device_unref(uinput);
    udev_unref(udev);
+
    return 0;
 }
