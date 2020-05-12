@@ -569,7 +569,7 @@ static void add_adapter(struct libusb_device *const dev)
    }
    a->device = dev;
 
-   if (libusb_open(a->device, &a->handle) != 0)
+   if (libusb_open(a->device, &a->handle) != LIBUSB_SUCCESS)
    {
       fprintf(stderr, "Error (%d): Problem opening device 0x%p\n", __LINE__, a->device);
       return;
