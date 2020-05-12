@@ -593,13 +593,24 @@ static void quitting_signal(int sig)
    quitting = 1;
 }
 
+void setup_signal_catching(){
+   struct sigaction sa;
+   memset(&sa, 0, sizeof(sa));
+
+   sa.sa_handler = quitting_signal;
+   sa.sa_flags = SA_RESTART | SA_RESETHAND;
+   sigemptyset(&sa.sa_mask);
+   
+   sigaction(SIGINT, &sa, NULL);
+   sigaction(SIGTERM, &sa, NULL);
+}
+
+
+
 int main(int argc, char *argv[])
 {
    struct udev *udev;
    struct udev_device *uinput;
-   struct sigaction sa;
-
-   memset(&sa, 0, sizeof(sa));
 
    if (argc > 1 && (strcmp(argv[1], "-r") == 0 || strcmp(argv[1], "--raw") == 0))
    {
@@ -607,12 +618,8 @@ int main(int argc, char *argv[])
       raw_mode = true;
    }
 
-   sa.sa_handler = quitting_signal;
-   sa.sa_flags = SA_RESTART | SA_RESETHAND;
-   sigemptyset(&sa.sa_mask);
-
-   sigaction(SIGINT, &sa, NULL);
-   sigaction(SIGTERM, &sa, NULL);
+   //Set up signal catching so we can exit gracefully
+   setup_signal_catching();
 
    udev = udev_new();
    if (udev == NULL) {
