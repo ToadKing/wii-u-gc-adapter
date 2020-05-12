@@ -1,2 +1,3 @@
 wii-u-gc-adapter
 *.o
+build/
