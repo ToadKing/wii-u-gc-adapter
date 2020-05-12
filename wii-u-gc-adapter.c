@@ -593,6 +593,35 @@ static void quitting_signal(int sig)
    quitting = 1;
 }
 
+void add_adapters_that_are_already_plugged_in(){
+   fprintf(stderr, "Checking through devices that are already plugged in\n");
+
+   struct libusb_device **devices;
+
+   //Get a list of devices
+   const int count = libusb_get_device_list(NULL, &devices);
+
+   //No devices found
+   if(count==0)
+      return;
+
+   for (int i = 0; i < count; i++)
+   {
+      struct libusb_device_descriptor desc;
+      libusb_get_device_descriptor(devices[i], &desc);
+      if (desc.idVendor == VENDOR_ID && desc.idProduct == PRODUCT_ID){
+         //Adapter was found, let's get a reference to it and add it to our list
+         //of adapters
+         add_adapter(devices[i]);
+      }
+   }
+
+   //Free list of devices, decrementing their references
+   libusb_free_device_list(devices, 1);
+}
+
+
+
 void setup_signal_catching(){
    struct sigaction sa;
    memset(&sa, 0, sizeof(sa));
@@ -643,20 +672,7 @@ int main(int argc, char *argv[])
 
    libusb_init(NULL);
 
-   struct libusb_device **devices;
-
-   int count = libusb_get_device_list(NULL, &devices);
-
-   for (int i = 0; i < count; i++)
-   {
-      struct libusb_device_descriptor desc;
-      libusb_get_device_descriptor(devices[i], &desc);
-      if (desc.idVendor == 0x057e && desc.idProduct == 0x0337)
-         add_adapter(devices[i]);
-   }
-
-   if (count > 0)
-      libusb_free_device_list(devices, 1);
+   add_adapters_that_are_already_plugged_in();
 
    libusb_hotplug_callback_handle callback;
 
