@@ -564,21 +564,21 @@ static void add_adapter(struct libusb_device *const dev)
    struct adapter *const a = calloc(1, sizeof(struct adapter));
    if (a == NULL)
    {
-      fprintf(stderr, "FATAL: calloc() failed");
+      fprintf(stderr, "FATAL (%d): Failed to allocate memory for an adapter!", __LINE__);
       exit(-1);
    }
    a->device = dev;
 
    if (libusb_open(a->device, &a->handle) != 0)
    {
-      fprintf(stderr, "Error opening device 0x%p\n", a->device);
+      fprintf(stderr, "Error (%d): Problem opening device 0x%p\n", __LINE__, a->device);
       return;
    }
 
    if (libusb_kernel_driver_active(a->handle, 0) == 1) {
        fprintf(stderr, "Detaching kernel driver\n");
        if (libusb_detach_kernel_driver(a->handle, 0)) {
-           fprintf(stderr, "Error detaching handle 0x%p from kernel\n", a->handle);
+           fprintf(stderr, "Error (%d): Problem detaching handle 0x%p from kernel\n", __LINE__, a->handle);
            return;
        }
    }
