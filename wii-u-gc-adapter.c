@@ -594,9 +594,30 @@ static void add_adapter(struct libusb_device *const dev)
    adapters.next = a;
    a->next = old_head;
 
-   pthread_create(&a->thread, NULL, adapter_thread, a);
+   //Pretty print some info about the adapter we've just got
+   struct libusb_device_descriptor desc;
+   libusb_get_device_descriptor(a->device, &desc);
 
-   fprintf(stderr, "adapter 0x%p connected\n", a->device);
+   unsigned char manufacturer_name[200] = {0};
+   unsigned char product_name[200] = {0};
+   int retcode;
+   if((retcode=libusb_get_string_descriptor_ascii(a->handle, desc.iManufacturer, manufacturer_name, sizeof(manufacturer_name)))<0){
+      fprintf(stderr, "Failed to get manufacturer string: %s!\n", libusb_strerror(retcode));
+   }
+   if((retcode=libusb_get_string_descriptor_ascii(a->handle, desc.idProduct, product_name, sizeof(product_name)))<0){
+      fprintf(stderr, "Failed to get product string: %s!\n", libusb_strerror(retcode));      
+   }
+
+   fprintf(stderr, "adapter 0x%p connected! Vendor: %04x, Product: %04x (%s), Manufacturer: %x (%s) \n", 
+      a->device, 
+      desc.idVendor,
+      desc.idProduct,
+      product_name,
+      desc.iManufacturer,
+      manufacturer_name);
+
+   //Start a thread to manage the adapter
+   pthread_create(&a->thread, NULL, adapter_thread, a);
 }
 
 static void remove_adapter(struct libusb_device *dev)
