@@ -437,36 +437,75 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
    }
 }
 
+
+
+bool send_to_adapter(const struct adapter *a, unsigned char payload[5]){
+   int bytes_transferred;
+   const int transfer_ret = libusb_interrupt_transfer(a->handle, EP_OUT, payload, 5, &bytes_transferred, 0);
+
+   if (transfer_ret != LIBUSB_SUCCESS ) {
+      fprintf(stderr, "libusb_interrupt_transfer (%d): %s\n", __LINE__, libusb_error_name(transfer_ret));
+      return false;
+   }
+   if (bytes_transferred != 5) {
+      fprintf(stderr, "libusb_interrupt_transfer (%d) %d/%d bytes transferred.\n", __LINE__, bytes_transferred, 5);
+      return false;
+   }
+
+   return true;
+}
+
+
+
+int receive_from_adapter(struct adapter *a, unsigned char payload[COMM_OUT_PAYLOAD_SIZE]){
+   int bytes_received = 0;
+   
+   int transfer_ret = libusb_interrupt_transfer(
+      a->handle, EP_IN, payload, COMM_OUT_PAYLOAD_SIZE, &bytes_received, COMM_TIMEOUT
+   );
+   
+   if (transfer_ret == LIBUSB_ERROR_TIMEOUT ) {
+      fprintf(stderr, "libusb_interrupt_transfer error (%d): LIBUSB_ERROR_TIMEOUT\n", __LINE__);         
+      return RX_FATAL;
+   }
+   
+   if (transfer_ret != LIBUSB_SUCCESS ) {
+      fprintf(stderr, "libusb_interrupt_transfer error (%d) %d\n", __LINE__, transfer_ret);
+      a->quitting = true;
+      return RX_FATAL;
+   }
+   
+   if (bytes_received != COMM_OUT_PAYLOAD_SIZE || payload[0] != 0x21)
+      return RX_SKIP;
+
+   return RX_GOOD;
+}
+
+
+
 static void *adapter_thread(void *data)
 {
    struct adapter *a = (struct adapter *)data;
 
-    int bytes_transferred;
-    unsigned char payload[1] = { 0x13 };
-
-    int transfer_ret = libusb_interrupt_transfer(a->handle, EP_OUT, payload, sizeof(payload), &bytes_transferred, 0);
-
-    if (transfer_ret != 0) {
-        fprintf(stderr, "libusb_interrupt_transfer: %s\n", libusb_error_name(transfer_ret));
-        return NULL;
-    }
-    if (bytes_transferred != sizeof(payload)) {
-        fprintf(stderr, "libusb_interrupt_transfer %d/%d bytes transferred.\n", bytes_transferred, sizeof(payload));
-        return NULL;
-    }
+   //Enable the adapter
+   {
+      unsigned char payload[5] = {COMM_ENABLE_ADAPTER};
+      if(!send_to_adapter(a, payload)){
+         return NULL;
+      }
+   }
 
    while (!a->quitting)
    {
       unsigned char payload[37];
-      int size = 0;
-      int transfer_ret = libusb_interrupt_transfer(a->handle, EP_IN, payload, sizeof(payload), &size, 0);
-      if (transfer_ret != 0) {
-         fprintf(stderr, "libusb_interrupt_transfer error %d\n", transfer_ret);
-         a->quitting = true;
+      const int receive_status = receive_from_adapter(a, payload);
+      if(receive_status==RX_FATAL)
          break;
-      }
-      if (size != 37 || payload[0] != 0x21)
+      else if(receive_status==RX_SKIP)
          continue;
+      else if(receive_status==RX_GOOD){
+         //Keep going
+      }
 
       unsigned char *controller = &payload[1];
 
@@ -499,8 +538,9 @@ static void *adapter_thread(void *data)
       if (memcmp(rumble, a->rumble, sizeof(rumble)) != 0)
       {
          memcpy(a->rumble, rumble, sizeof(rumble));
-         transfer_ret = libusb_interrupt_transfer(a->handle, EP_OUT, a->rumble, sizeof(a->rumble), &size, 0);
-         if (transfer_ret != 0) {
+         int bytes_received;
+         int transfer_ret = libusb_interrupt_transfer(a->handle, EP_OUT, a->rumble, sizeof(a->rumble), &bytes_received, 0);
+         if (transfer_ret != LIBUSB_SUCCESS ) {
             fprintf(stderr, "libusb_interrupt_transfer error %d\n", transfer_ret);
             a->quitting = true;
             break;
