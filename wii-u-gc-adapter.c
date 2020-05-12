@@ -25,8 +25,9 @@
 #error libusb(x) 1.0.16 or higher is required
 #endif
 
-#define EP_IN  0x81
-#define EP_OUT 0x02
+//USB endpoints. Find with, e.g., `lsusb -v -d 057e:0337`
+const unsigned char EP_IN  = 0x81;
+const unsigned char EP_OUT = 0x02;
 
 #define STATE_NORMAL   0x10
 #define STATE_WAVEBIRD 0x20
