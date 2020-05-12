@@ -25,14 +25,31 @@
 #error libusb(x) 1.0.16 or higher is required
 #endif
 
+//Adapter's USB Info
+const int VENDOR_ID  = 0x057e;
+const int PRODUCT_ID = 0x0337;
+
 //USB endpoints. Find with, e.g., `lsusb -v -d 057e:0337`
 const unsigned char EP_IN  = 0x81;
 const unsigned char EP_OUT = 0x02;
+const int COMM_OUT_PAYLOAD_SIZE = 37;
+
+//USB configuration
+const uint32_t COMM_TIMEOUT = 100; //milliseconds
 
 #define STATE_NORMAL   0x10
 #define STATE_WAVEBIRD 0x20
 
 #define MAX_FF_EVENTS 4
+
+//Communication codes
+const unsigned char COMM_ENABLE_ADAPTER = 0x13;
+
+enum COMM_RECEIVE_TYPES {
+   RX_FATAL,
+   RX_SKIP,
+   RX_GOOD
+};
 
 const int BUTTON_OFFSET_VALUES[16] = {
    BTN_START,
