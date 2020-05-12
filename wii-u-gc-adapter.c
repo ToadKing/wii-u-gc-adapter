@@ -575,12 +575,18 @@ static void add_adapter(struct libusb_device *const dev)
       return;
    }
 
-   if (libusb_kernel_driver_active(a->handle, 0) == 1) {
+   const int is_kernel_driver_active = libusb_kernel_driver_active(a->handle, 0);
+   if (is_kernel_driver_active == 1) {
        fprintf(stderr, "Detaching kernel driver\n");
        if (libusb_detach_kernel_driver(a->handle, 0)) {
            fprintf(stderr, "Error (%d): Problem detaching handle 0x%p from kernel\n", __LINE__, a->handle);
            return;
        }
+   } else if (is_kernel_driver_active==0){
+      fprintf(stderr, "No kernel driver was active for this adapter - good.\n");      
+   } else {
+      fprintf(stderr, "Could not determine if a kernel driver was already active for the adapter! (Error: %d)\n", is_kernel_driver_active);
+      return;
    }
 
    //Add adapter to linked list of adapters
