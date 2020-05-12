@@ -622,6 +622,29 @@ void add_adapters_that_are_already_plugged_in(){
 
 
 
+bool setup_hotplugging(libusb_hotplug_callback_handle *callback){
+   fprintf(stderr, "Preparing hotplugging\n");
+
+   int hotplug_capability = libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG);
+   if (hotplug_capability) {
+      const int hotplug_ret = libusb_hotplug_register_callback(NULL,
+            LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
+            0, VENDOR_ID, PRODUCT_ID,
+            LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, callback);
+
+      if (hotplug_ret != LIBUSB_SUCCESS) {
+         fprintf(stderr, "cannot register hotplug callback, hotplugging not enabled\n");
+         return false;
+      }
+
+      return true;
+   }
+
+   return false;
+}
+
+
+
 void setup_signal_catching(){
    struct sigaction sa;
    memset(&sa, 0, sizeof(sa));
@@ -675,19 +698,7 @@ int main(int argc, char *argv[])
    add_adapters_that_are_already_plugged_in();
 
    libusb_hotplug_callback_handle callback;
-
-   int hotplug_capability = libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG);
-   if (hotplug_capability) {
-       int hotplug_ret = libusb_hotplug_register_callback(NULL,
-             LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
-             0, 0x057e, 0x0337,
-             LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, &callback);
-
-       if (hotplug_ret != LIBUSB_SUCCESS) {
-           fprintf(stderr, "cannot register hotplug callback, hotplugging not enabled\n");
-           hotplug_capability = 0;
-       }
-   }
+   bool hotplug_capability = setup_hotplugging(&callback);
 
    // pump events until shutdown & all helper threads finish cleaning up
    while (!quitting)
@@ -702,5 +713,6 @@ int main(int argc, char *argv[])
    libusb_exit(NULL);
    udev_device_unref(uinput);
    udev_unref(udev);
+
    return 0;
 }
