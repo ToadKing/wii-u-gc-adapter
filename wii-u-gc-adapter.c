@@ -39,17 +39,17 @@
 
 const int BUTTON_OFFSET_VALUES[16] = {
    BTN_START,
-   BTN_TR2,
+   BTN_Z,
    BTN_TR,
    BTN_TL,
    -1,
    -1,
    -1,
    -1,
-   BTN_SOUTH,
-   BTN_WEST,
-   BTN_EAST,
-   BTN_NORTH,
+   BTN_B,
+   BTN_Y,
+   BTN_X,
+   BTN_A,
    BTN_DPAD_LEFT,
    BTN_DPAD_RIGHT,
    BTN_DPAD_DOWN,
@@ -132,10 +132,10 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
 
    // buttons
    ioctl(port->uinput, UI_SET_EVBIT, EV_KEY);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_NORTH);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_SOUTH);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_EAST);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_WEST);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_A);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_B);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_X);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_Y);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_START);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_DPAD_UP);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_DPAD_DOWN);
@@ -143,7 +143,7 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_DPAD_RIGHT);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_TL);
    ioctl(port->uinput, UI_SET_KEYBIT, BTN_TR);
-   ioctl(port->uinput, UI_SET_KEYBIT, BTN_TR2);
+   ioctl(port->uinput, UI_SET_KEYBIT, BTN_Z);
 
    // axis
    ioctl(port->uinput, UI_SET_EVBIT, EV_ABS);
