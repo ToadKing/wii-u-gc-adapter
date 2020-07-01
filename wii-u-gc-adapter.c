@@ -102,8 +102,6 @@ struct adapter
    struct adapter *next;
 };
 
-static bool raw_mode;
-
 static volatile int quitting;
 
 static struct adapter adapters;
@@ -158,23 +156,27 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    ioctl(port->uinput, UI_SET_ABSBIT, ABS_Z);
    ioctl(port->uinput, UI_SET_ABSBIT, ABS_RZ);
 
-   if (raw_mode)
-   {
-      uinput_dev.absmin[ABS_X]  = 0;  uinput_dev.absmax[ABS_X]  = 255;
-      uinput_dev.absmin[ABS_Y]  = 0;  uinput_dev.absmax[ABS_Y]  = 255;
-      uinput_dev.absmin[ABS_RX] = 0;  uinput_dev.absmax[ABS_RX] = 255;
-      uinput_dev.absmin[ABS_RY] = 0;  uinput_dev.absmax[ABS_RY] = 255;
-      uinput_dev.absmin[ABS_Z]  = 0;  uinput_dev.absmax[ABS_Z]  = 255;
-      uinput_dev.absmin[ABS_RZ] = 0;  uinput_dev.absmax[ABS_RZ] = 255;
-   }
-   else
-   {
-      uinput_dev.absmin[ABS_X]  = 20; uinput_dev.absmax[ABS_X]  = 235;
-      uinput_dev.absmin[ABS_Y]  = 20; uinput_dev.absmax[ABS_Y]  = 235;
-      uinput_dev.absmin[ABS_RX] = 30; uinput_dev.absmax[ABS_RX] = 225;
-      uinput_dev.absmin[ABS_RY] = 30; uinput_dev.absmax[ABS_RY] = 225;
-      uinput_dev.absmin[ABS_Z]  = 25; uinput_dev.absmax[ABS_Z]  = 225;
-      uinput_dev.absmin[ABS_RZ] = 25; uinput_dev.absmax[ABS_RZ] = 225;
+   if (calibrate) {
+      uinput_dev.absmin[ABS_X]  = 0;  uinput_dev.absmax[ABS_X]  = 0xFF;
+      uinput_dev.absmin[ABS_Y]  = 0;  uinput_dev.absmax[ABS_Y]  = 0xFF;
+      uinput_dev.absmin[ABS_RX] = 0;  uinput_dev.absmax[ABS_RX] = 0xFF;
+      uinput_dev.absmin[ABS_RY] = 0;  uinput_dev.absmax[ABS_RY] = 0xFF;
+      uinput_dev.absmin[ABS_Z]  = 0;  uinput_dev.absmax[ABS_Z]  = 0xFF;
+      uinput_dev.absmin[ABS_RZ] = 0;  uinput_dev.absmax[ABS_RZ] = 0xFF;
+   } else {
+      uinput_dev.absmin[ABS_X]  = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_X]];
+      uinput_dev.absmin[ABS_Y]  = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_Y]];
+      uinput_dev.absmin[ABS_RX] = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_RX]];
+      uinput_dev.absmin[ABS_RY] = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_RY]];
+      uinput_dev.absmin[ABS_Z]  = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_Z]];
+      uinput_dev.absmin[ABS_RZ] = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_RZ]];
+
+      uinput_dev.absmax[ABS_X]  = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_X]];
+      uinput_dev.absmax[ABS_Y]  = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_Y]];
+      uinput_dev.absmax[ABS_RX] = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_RX]];
+      uinput_dev.absmax[ABS_RY] = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_RY]];
+      uinput_dev.absmax[ABS_Z]  = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_Z]];
+      uinput_dev.absmax[ABS_RZ] = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_RZ]];
    }
 
    // rumble
@@ -474,6 +476,14 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
    }
 }
 
+void print_calibration_data()
+{
+   for (size_t i = 0; i < sizeof(AXIS_MIN_VALUES); i++) {
+      printf("%d,%d,", AXIS_MIN_VALUES[i], AXIS_MAX_VALUES[i]);
+   }
+   printf("\n");
+}
+
 static void *adapter_thread(void *data)
 {
    struct adapter *a = (struct adapter *)data;
@@ -543,24 +553,16 @@ static void *adapter_thread(void *data)
             break;
          }
       }
+
+      if (calibrate) {
+         print_calibration_data();
+      }
    }
 
    for (int i = 0; i < 4; i++)
    {
       if (a->controllers[i].connected)
          uinput_destroy(i, &a->controllers[i]);
-   }
-
-   if (calibrate) {
-       printf(
-           "X %d,%d Y %d,%d; RX %d,%d; RY %d,%d; Z %d,%d, RZ %d,%d\n",
-           AXIS_MIN_VALUES[0], AXIS_MAX_VALUES[0],
-           AXIS_MIN_VALUES[1], AXIS_MAX_VALUES[1],
-           AXIS_MIN_VALUES[2], AXIS_MAX_VALUES[2],
-           AXIS_MIN_VALUES[3], AXIS_MAX_VALUES[3],
-           AXIS_MIN_VALUES[4], AXIS_MAX_VALUES[4],
-           AXIS_MIN_VALUES[5], AXIS_MAX_VALUES[5]
-       );
    }
 
    return NULL;
@@ -662,39 +664,62 @@ enum {
 };
 
 static struct option options[] = {
-   { "raw", no_argument, 0, 'r' },
    { "calibrate", no_argument, 0, 'c' },
+   { "set-calibration-data", required_argument, 0, 's' },
    { "vendor", required_argument, 0, opt_vendor },
    { "product", required_argument, 0, opt_product },
    { 0, 0, 0, 0 },
 };
 
+void set_calibration_data(char str[])
+{
+   char *token = strtok(str, ",");
+   for (size_t i = 0; token && i < sizeof(AXIS_MIN_VALUES); i++) {
+      AXIS_MIN_VALUES[i] = atoi(token);
+      token = strtok(NULL, ",");
+
+      AXIS_MAX_VALUES[i] = atoi(token);
+      token = strtok(NULL, ",");
+   }
+}
+
 void parse_args(int argc, char *argv[])
 {
-   while (1) {
+   bool has_calibration_data = false;
+   for (;;) {
       int option_index = 0;
       int c = getopt_long(argc, argv, "r", options, &option_index);
       if (c == -1)
          break;
 
       switch (c) {
-      case 'r':
-         fprintf(stderr, "raw mode enabled\n");
-         raw_mode = true;
-         break;
-      case 'c':
-         fprintf(stderr, "displaying raw calibration data\nquit to display the results");
-         calibrate = true;
-         break;
-      case opt_vendor:
-         vendor_id = parse_id(optarg);
-         fprintf(stderr, "vendor_id = %#06x\n", vendor_id);
-         break;
-      case opt_product:
-         product_id = parse_id(optarg);
-         fprintf(stderr, "product_id = %#06x\n", product_id);
-         break;
+         case 'c':
+            fprintf(stderr, "displaying calibration data, quit to display the results\n");
+            calibrate = true;
+            break;
+         case 's':
+            set_calibration_data(optarg);
+            has_calibration_data = true;
+            break;
+         case opt_vendor:
+            vendor_id = parse_id(optarg);
+            fprintf(stderr, "vendor_id = %#06x\n", vendor_id);
+            break;
+         case opt_product:
+            product_id = parse_id(optarg);
+            fprintf(stderr, "product_id = %#06x\n", product_id);
+            break;
       }
+   }
+
+   if (!has_calibration_data && !calibrate) {
+      memset(&AXIS_MIN_VALUES, 0, sizeof(AXIS_MIN_VALUES));
+      memset(&AXIS_MAX_VALUES, 0xFF, sizeof(AXIS_MAX_VALUES));
+   }
+
+   if (!calibrate) {
+      printf("using calibration data: ");
+      print_calibration_data();
    }
 }
 
