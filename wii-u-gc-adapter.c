@@ -65,6 +65,10 @@ const int AXIS_OFFSET_VALUES[6] = {
    ABS_RZ
 };
 
+static uint8_t AXIS_MIN_VALUES[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+static uint8_t AXIS_MAX_VALUES[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+static bool calibrate = false;
+
 struct ff_event
 {
    bool in_use;
@@ -382,6 +386,15 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
       if (AXIS_OFFSET_VALUES[j] == ABS_Y || AXIS_OFFSET_VALUES[j] == ABS_RY)
          value ^= 0xFF; // flip from 0 - 255 to 255 - 0
 
+      if (calibrate) {
+         if (value < AXIS_MIN_VALUES[j]) {
+             AXIS_MIN_VALUES[j] = value;
+         }
+         if (value > AXIS_MAX_VALUES[j]) {
+             AXIS_MAX_VALUES[j] = value;
+         }
+      }
+
       if (port->axis[j] != value)
       {
          events[e_count].type = EV_ABS;
@@ -538,6 +551,18 @@ static void *adapter_thread(void *data)
          uinput_destroy(i, &a->controllers[i]);
    }
 
+   if (calibrate) {
+       printf(
+           "X %d,%d Y %d,%d; RX %d,%d; RY %d,%d; Z %d,%d, RZ %d,%d\n",
+           AXIS_MIN_VALUES[0], AXIS_MAX_VALUES[0],
+           AXIS_MIN_VALUES[1], AXIS_MAX_VALUES[1],
+           AXIS_MIN_VALUES[2], AXIS_MAX_VALUES[2],
+           AXIS_MIN_VALUES[3], AXIS_MAX_VALUES[3],
+           AXIS_MIN_VALUES[4], AXIS_MAX_VALUES[4],
+           AXIS_MIN_VALUES[5], AXIS_MAX_VALUES[5]
+       );
+   }
+
    return NULL;
 }
 
@@ -638,19 +663,14 @@ enum {
 
 static struct option options[] = {
    { "raw", no_argument, 0, 'r' },
+   { "calibrate", no_argument, 0, 'c' },
    { "vendor", required_argument, 0, opt_vendor },
    { "product", required_argument, 0, opt_product },
    { 0, 0, 0, 0 },
 };
 
-int main(int argc, char *argv[])
+void parse_args(int argc, char *argv[])
 {
-   struct udev *udev;
-   struct udev_device *uinput;
-   struct sigaction sa;
-
-   memset(&sa, 0, sizeof(sa));
-
    while (1) {
       int option_index = 0;
       int c = getopt_long(argc, argv, "r", options, &option_index);
@@ -662,6 +682,10 @@ int main(int argc, char *argv[])
          fprintf(stderr, "raw mode enabled\n");
          raw_mode = true;
          break;
+      case 'c':
+         fprintf(stderr, "displaying raw calibration data\nquit to display the results");
+         calibrate = true;
+         break;
       case opt_vendor:
          vendor_id = parse_id(optarg);
          fprintf(stderr, "vendor_id = %#06x\n", vendor_id);
@@ -672,6 +696,17 @@ int main(int argc, char *argv[])
          break;
       }
    }
+}
+
+int main(int argc, char *argv[])
+{
+   struct udev *udev;
+   struct udev_device *uinput;
+   struct sigaction sa;
+
+   memset(&sa, 0, sizeof(sa));
+
+   parse_args(argc, argv);
 
    sa.sa_handler = quitting_signal;
    sa.sa_flags = SA_RESTART | SA_RESETHAND;
