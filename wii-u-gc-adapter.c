@@ -177,16 +177,24 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    snprintf(uinput_dev.name, sizeof(uinput_dev.name), "Wii U GameCube Adapter Port %d", i+1);
    uinput_dev.name[sizeof(uinput_dev.name)-1] = 0;
    uinput_dev.id.bustype = BUS_USB;
-   if (write(port->uinput, &uinput_dev, sizeof(uinput_dev)) != sizeof(uinput_dev))
+
+   size_t to_write = sizeof(uinput_dev);
+   size_t written = 0;
+   while (written < to_write)
    {
-      fprintf(stderr, "error writing uinput device settings");
-      close(port->uinput);
-      return false;
+      ssize_t write_ret = write(port->uinput, (const char*)&uinput_dev + written, to_write - written);
+      if (write_ret < 0)
+      {
+         perror("error writing uinput device settings");
+         close(port->uinput);
+         return false;
+      }
+      written += write_ret;
    }
 
    if (ioctl(port->uinput, UI_DEV_CREATE) != 0)
    {
-      fprintf(stderr, "error creating uinput device");
+      perror("error creating uinput device");
       close(port->uinput);
       return false;
    }
@@ -303,7 +311,7 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
 
    if (type != port->type)
    {
-      fprintf(stderr, "controller on port %d changed controller type???", i+1);
+      fprintf(stderr, "controller on port %d changed controller type???\n", i+1);
       port->type = type;
    }
 
@@ -360,9 +368,7 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
          ssize_t write_ret = write(port->uinput, (const char*)events + written, to_write - written);
          if (write_ret < 0)
          {
-            char msg[128];
-            strerror_r(errno, msg, sizeof(msg));
-            fprintf(stderr, "Warning: writing input events failed: %s\n", msg);
+            perror("Warning: writing input events failed");
             break;
          }
          written += write_ret;
@@ -504,21 +510,21 @@ static void add_adapter(struct libusb_device *dev)
    struct adapter *a = calloc(1, sizeof(struct adapter));
    if (a == NULL)
    {
-      fprintf(stderr, "FATAL: calloc() failed");
+      fprintf(stderr, "FATAL: calloc() failed\n");
       exit(-1);
    }
    a->device = dev;
 
    if (libusb_open(a->device, &a->handle) != 0)
    {
-      fprintf(stderr, "Error opening device 0x%p\n", a->device);
+      fprintf(stderr, "Error opening device %p\n", a->device);
       return;
    }
 
    if (libusb_kernel_driver_active(a->handle, 0) == 1) {
        fprintf(stderr, "Detaching kernel driver\n");
        if (libusb_detach_kernel_driver(a->handle, 0)) {
-           fprintf(stderr, "Error detaching handle 0x%p from kernel\n", a->handle);
+           fprintf(stderr, "Error detaching handle %p from kernel\n", a->handle);
            return;
        }
    }
@@ -529,7 +535,7 @@ static void add_adapter(struct libusb_device *dev)
 
    pthread_create(&a->thread, NULL, adapter_thread, a);
 
-   fprintf(stderr, "adapter 0x%p connected\n", a->device);
+   fprintf(stderr, "adapter %p connected\n", a->device);
 }
 
 static void remove_adapter(struct libusb_device *dev)
@@ -541,7 +547,7 @@ static void remove_adapter(struct libusb_device *dev)
       {
          a->next->quitting = true;
          pthread_join(a->next->thread, NULL);
-         fprintf(stderr, "adapter 0x%p disconnected\n", a->next->device);
+         fprintf(stderr, "adapter %p disconnected\n", a->next->device);
          libusb_close(a->next->handle);
          struct adapter *new_next = a->next->next;
          free(a->next);
