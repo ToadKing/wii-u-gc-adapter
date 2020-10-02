@@ -25,6 +25,9 @@
 #error libusb(x) 1.0.16 or higher is required
 #endif
 
+#define USB_ID_VENDOR  0x057e
+#define USB_ID_PRODUCT 0x0337
+
 #define EP_IN  0x81
 #define EP_OUT 0x02
 
@@ -177,6 +180,8 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    snprintf(uinput_dev.name, sizeof(uinput_dev.name), "Wii U GameCube Adapter Port %d", i+1);
    uinput_dev.name[sizeof(uinput_dev.name)-1] = 0;
    uinput_dev.id.bustype = BUS_USB;
+   uinput_dev.id.vendor = USB_ID_VENDOR;
+   uinput_dev.id.product = USB_ID_PRODUCT;
 
    size_t to_write = sizeof(uinput_dev);
    size_t written = 0;
@@ -632,7 +637,7 @@ int main(int argc, char *argv[])
    {
       struct libusb_device_descriptor desc;
       libusb_get_device_descriptor(devices[i], &desc);
-      if (desc.idVendor == 0x057e && desc.idProduct == 0x0337)
+      if (desc.idVendor == USB_ID_VENDOR && desc.idProduct == USB_ID_PRODUCT)
          add_adapter(devices[i]);
    }
 
@@ -645,7 +650,7 @@ int main(int argc, char *argv[])
    if (hotplug_capability) {
        int hotplug_ret = libusb_hotplug_register_callback(NULL,
              LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
-             0, 0x057e, 0x0337,
+             0, USB_ID_VENDOR, USB_ID_PRODUCT,
              LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, &callback);
 
        if (hotplug_ret != LIBUSB_SUCCESS) {
