@@ -99,6 +99,8 @@ struct adapter
 
 static bool raw_mode;
 
+static bool relative_mode;
+
 static volatile int quitting;
 
 static struct adapter adapters;
@@ -120,7 +122,8 @@ static unsigned char connected_type(unsigned char status)
 
 static bool uinput_create(int i, struct ports *port, unsigned char type)
 {
-   fprintf(stderr, "connecting on port %d\n", i);
+   f
+      f(stderr, "connecting on port %d\n", i);
    struct uinput_user_dev uinput_dev;
    memset(&uinput_dev, 0, sizeof(uinput_dev));
    port->uinput = open(uinput_path, O_RDWR | O_NONBLOCK);
@@ -157,6 +160,16 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
       uinput_dev.absmin[ABS_RY] = 0;  uinput_dev.absmax[ABS_RY] = 255;
       uinput_dev.absmin[ABS_Z]  = 0;  uinput_dev.absmax[ABS_Z]  = 255;
       uinput_dev.absmin[ABS_RZ] = 0;  uinput_dev.absmax[ABS_RZ] = 255;
+   }
+   else if (relative_mode)
+   {
+    // In relative mode count from 0
+      uinput_dev.absmin[ABS_X]  = -95;  uinput_dev.absmax[ABS_X]  = 95;
+      uinput_dev.absmin[ABS_Y]  = -95;  uinput_dev.absmax[ABS_Y]  = 95;
+      uinput_dev.absmin[ABS_RX] = -95;  uinput_dev.absmax[ABS_RX] = 95;
+      uinput_dev.absmin[ABS_RY] = -95;  uinput_dev.absmax[ABS_RY] = 95;
+      uinput_dev.absmin[ABS_Z]  = 0;  uinput_dev.absmax[ABS_Z]  = 255;
+      uinput_dev.absmin[ABS_RZ] = 0;  uinput_dev.absmax[ABS_RZ] = 255;       
    }
    else
    {
@@ -346,7 +359,7 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
 
    for (int j = 0; j < 6; j++)
    {
-      unsigned char value = payload[j+3];
+    int value = payload[j+3];
 
       if (AXIS_OFFSET_VALUES[j] == ABS_Y || AXIS_OFFSET_VALUES[j] == ABS_RY)
          value ^= 0xFF; // flip from 0 - 255 to 255 - 0
@@ -355,6 +368,10 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
       {
          events[e_count].type = EV_ABS;
          events[e_count].code = AXIS_OFFSET_VALUES[j];
+         // only analog sticks can have negative values, triggers cannot
+         if (relative_mode && AXIS_OFFSET_VALUES[j] != ABS_Z && AXIS_OFFSET_VALUES[j] != ABS_RZ) {
+             value = value - 132;
+         }
          events[e_count].value = value;
          e_count++;
          port->axis[j] = value;
@@ -594,10 +611,15 @@ int main(int argc, char *argv[])
 
    memset(&sa, 0, sizeof(sa));
 
-   if (argc > 1 && (strcmp(argv[1], "-r") == 0 || strcmp(argv[1], "--raw") == 0))
-   {
-      fprintf(stderr, "raw mode enabled\n");
-      raw_mode = true;
+   if (argc > 1){
+      if (strcmp(argv[1], "-r") == 0 || strcmp(argv[1], "--raw") == 0){
+         fprintf(stderr, "raw mode enabled\n");
+         raw_mode = true;
+      } else if (strcmp(argv[1], "-R") == 0 || strcmp(argv[1], "--relative") == 0){
+         fprintf(stderr, "relative mode enabled\n");
+         relative_mode = true;  
+       }
+       
    }
 
    sa.sa_handler = quitting_signal;

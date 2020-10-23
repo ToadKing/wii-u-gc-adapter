@@ -23,5 +23,15 @@ all: $(TARGET)
 clean:
 	rm -f $(TARGET)
 	rm -f $(OBJS)
+	
+#PREFIX is environment variable, but if it is not set, then set default value
+ifeq ($(PREFIX),)
+    PREFIX := /usr/local
+endif
+
+install: wii-u-gc-adapter
+	install -d $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 wii-u-gc-adapter $(DESTDIR)$(PREFIX)/bin/
+
 
 .PHONY: all clean
