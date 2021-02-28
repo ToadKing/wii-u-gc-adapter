@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h>
 
 #include <linux/input.h>
 #include <linux/uinput.h>
@@ -105,6 +106,10 @@ static struct adapter adapters;
 
 static const char *uinput_path;
 
+static uint16_t vendor_id = USB_ID_VENDOR;
+
+static uint16_t product_id = USB_ID_PRODUCT;
+
 static unsigned char connected_type(unsigned char status)
 {
    unsigned char type = status & (STATE_NORMAL | STATE_WAVEBIRD);
@@ -180,8 +185,8 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    snprintf(uinput_dev.name, sizeof(uinput_dev.name), "Wii U GameCube Adapter Port %d", i+1);
    uinput_dev.name[sizeof(uinput_dev.name)-1] = 0;
    uinput_dev.id.bustype = BUS_USB;
-   uinput_dev.id.vendor = USB_ID_VENDOR;
-   uinput_dev.id.product = USB_ID_PRODUCT;
+   uinput_dev.id.vendor = vendor_id;
+   uinput_dev.id.product = product_id;
 
    size_t to_write = sizeof(uinput_dev);
    size_t written = 0;
@@ -586,6 +591,32 @@ static void quitting_signal(int sig)
    quitting = 1;
 }
 
+static uint16_t parse_id(const char* str)
+{
+   char* endptr = NULL;
+   unsigned long out = strtoul(str, &endptr, 0);
+
+   if (out > 0xffff || *endptr)
+   {
+      fprintf(stderr, "Invalid ID \"%s\"\n", str);
+      exit(1);
+   }
+
+   return out;
+}
+
+enum {
+   opt_vendor = 1000,
+   opt_product,
+};
+
+static struct option options[] = {
+   { "raw", no_argument, 0, 'r' },
+   { "vendor", required_argument, 0, opt_vendor },
+   { "product", required_argument, 0, opt_product },
+   { 0, 0, 0, 0 },
+};
+
 int main(int argc, char *argv[])
 {
    struct udev *udev;
@@ -594,10 +625,26 @@ int main(int argc, char *argv[])
 
    memset(&sa, 0, sizeof(sa));
 
-   if (argc > 1 && (strcmp(argv[1], "-r") == 0 || strcmp(argv[1], "--raw") == 0))
-   {
-      fprintf(stderr, "raw mode enabled\n");
-      raw_mode = true;
+   while (1) {
+      int option_index = 0;
+      int c = getopt_long(argc, argv, "r", options, &option_index);
+      if (c == -1)
+         break;
+
+      switch (c) {
+      case 'r':
+         fprintf(stderr, "raw mode enabled\n");
+         raw_mode = true;
+         break;
+      case opt_vendor:
+         vendor_id = parse_id(optarg);
+         fprintf(stderr, "vendor_id = %#06x\n", vendor_id);
+         break;
+      case opt_product:
+         product_id = parse_id(optarg);
+         fprintf(stderr, "product_id = %#06x\n", product_id);
+         break;
+      }
    }
 
    sa.sa_handler = quitting_signal;
