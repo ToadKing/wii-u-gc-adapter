@@ -275,11 +275,29 @@ static void update_ff_start_stop(struct ff_event *e, struct timespec *current_ti
 
 static int create_ff_event(struct ports *port, struct uinput_ff_upload *upload)
 {
+   bool stop = false;
+   switch (upload->effect.type)
+   {
+      case FF_PERIODIC:
+         stop = upload->effect.u.periodic.magnitude == 0;
+         break;
+      case FF_RUMBLE:
+         stop = upload->effect.u.rumble.strong_magnitude == 0 && upload->effect.u.rumble.weak_magnitude == 0;
+         break;
+   }
    if (upload->old.type != 0)
    {
-      // events with length 0 last forever
-      port->ff_events[upload->old.id].forever = (upload->effect.replay.length == 0);
-      port->ff_events[upload->old.id].duration = upload->effect.replay.length;
+      if (stop)
+      {
+         port->ff_events[upload->old.id].forever = false;
+         port->ff_events[upload->old.id].duration = 0;
+      }
+      else
+      {
+         // events with length 0 last forever
+         port->ff_events[upload->old.id].forever = (upload->effect.replay.length == 0);
+         port->ff_events[upload->old.id].duration = upload->effect.replay.length;
+      }
       port->ff_events[upload->old.id].delay = upload->effect.replay.delay;
       port->ff_events[upload->old.id].repetitions = 0;
       return upload->old.id;
@@ -289,8 +307,16 @@ static int create_ff_event(struct ports *port, struct uinput_ff_upload *upload)
       if (!port->ff_events[i].in_use)
       {
          port->ff_events[i].in_use = true;
-         port->ff_events[i].forever = (upload->effect.replay.length == 0);
-         port->ff_events[i].duration = upload->effect.replay.length;
+         if (stop)
+         {
+            port->ff_events[i].forever = false;
+            port->ff_events[i].duration = 0;
+         }
+         else
+         {
+            port->ff_events[i].forever = (upload->effect.replay.length == 0);
+            port->ff_events[i].duration = upload->effect.replay.length;
+         }
          port->ff_events[i].delay = upload->effect.replay.delay;
          port->ff_events[i].repetitions = 0;
          return i;
