@@ -65,6 +65,10 @@ const int AXIS_OFFSET_VALUES[6] = {
    ABS_RZ
 };
 
+static uint8_t AXIS_MIN_VALUES[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+static uint8_t AXIS_MAX_VALUES[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+static bool calibrate = false;
+
 struct ff_event
 {
    bool in_use;
@@ -97,8 +101,6 @@ struct adapter
    struct ports controllers[4];
    struct adapter *next;
 };
-
-static bool raw_mode;
 
 static volatile int quitting;
 
@@ -154,23 +156,27 @@ static bool uinput_create(int i, struct ports *port, unsigned char type)
    ioctl(port->uinput, UI_SET_ABSBIT, ABS_Z);
    ioctl(port->uinput, UI_SET_ABSBIT, ABS_RZ);
 
-   if (raw_mode)
-   {
-      uinput_dev.absmin[ABS_X]  = 0;  uinput_dev.absmax[ABS_X]  = 255;
-      uinput_dev.absmin[ABS_Y]  = 0;  uinput_dev.absmax[ABS_Y]  = 255;
-      uinput_dev.absmin[ABS_RX] = 0;  uinput_dev.absmax[ABS_RX] = 255;
-      uinput_dev.absmin[ABS_RY] = 0;  uinput_dev.absmax[ABS_RY] = 255;
-      uinput_dev.absmin[ABS_Z]  = 0;  uinput_dev.absmax[ABS_Z]  = 255;
-      uinput_dev.absmin[ABS_RZ] = 0;  uinput_dev.absmax[ABS_RZ] = 255;
-   }
-   else
-   {
-      uinput_dev.absmin[ABS_X]  = 20; uinput_dev.absmax[ABS_X]  = 235;
-      uinput_dev.absmin[ABS_Y]  = 20; uinput_dev.absmax[ABS_Y]  = 235;
-      uinput_dev.absmin[ABS_RX] = 30; uinput_dev.absmax[ABS_RX] = 225;
-      uinput_dev.absmin[ABS_RY] = 30; uinput_dev.absmax[ABS_RY] = 225;
-      uinput_dev.absmin[ABS_Z]  = 25; uinput_dev.absmax[ABS_Z]  = 225;
-      uinput_dev.absmin[ABS_RZ] = 25; uinput_dev.absmax[ABS_RZ] = 225;
+   if (calibrate) {
+      uinput_dev.absmin[ABS_X]  = 0;  uinput_dev.absmax[ABS_X]  = 0xFF;
+      uinput_dev.absmin[ABS_Y]  = 0;  uinput_dev.absmax[ABS_Y]  = 0xFF;
+      uinput_dev.absmin[ABS_RX] = 0;  uinput_dev.absmax[ABS_RX] = 0xFF;
+      uinput_dev.absmin[ABS_RY] = 0;  uinput_dev.absmax[ABS_RY] = 0xFF;
+      uinput_dev.absmin[ABS_Z]  = 0;  uinput_dev.absmax[ABS_Z]  = 0xFF;
+      uinput_dev.absmin[ABS_RZ] = 0;  uinput_dev.absmax[ABS_RZ] = 0xFF;
+   } else {
+      uinput_dev.absmin[ABS_X]  = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_X]];
+      uinput_dev.absmin[ABS_Y]  = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_Y]];
+      uinput_dev.absmin[ABS_RX] = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_RX]];
+      uinput_dev.absmin[ABS_RY] = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_RY]];
+      uinput_dev.absmin[ABS_Z]  = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_Z]];
+      uinput_dev.absmin[ABS_RZ] = AXIS_MIN_VALUES[AXIS_OFFSET_VALUES[ABS_RZ]];
+
+      uinput_dev.absmax[ABS_X]  = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_X]];
+      uinput_dev.absmax[ABS_Y]  = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_Y]];
+      uinput_dev.absmax[ABS_RX] = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_RX]];
+      uinput_dev.absmax[ABS_RY] = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_RY]];
+      uinput_dev.absmax[ABS_Z]  = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_Z]];
+      uinput_dev.absmax[ABS_RZ] = AXIS_MAX_VALUES[AXIS_OFFSET_VALUES[ABS_RZ]];
    }
 
    // rumble
@@ -382,6 +388,15 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
       if (AXIS_OFFSET_VALUES[j] == ABS_Y || AXIS_OFFSET_VALUES[j] == ABS_RY)
          value ^= 0xFF; // flip from 0 - 255 to 255 - 0
 
+      if (calibrate) {
+         if (value < AXIS_MIN_VALUES[j]) {
+             AXIS_MIN_VALUES[j] = value;
+         }
+         if (value > AXIS_MAX_VALUES[j]) {
+             AXIS_MAX_VALUES[j] = value;
+         }
+      }
+
       if (port->axis[j] != value)
       {
          events[e_count].type = EV_ABS;
@@ -461,6 +476,14 @@ static void handle_payload(int i, struct ports *port, unsigned char *payload, st
    }
 }
 
+void print_calibration_data()
+{
+   for (size_t i = 0; i < sizeof(AXIS_MIN_VALUES); i++) {
+      printf("%d,%d,", AXIS_MIN_VALUES[i], AXIS_MAX_VALUES[i]);
+   }
+   printf("\n");
+}
+
 static void *adapter_thread(void *data)
 {
    struct adapter *a = (struct adapter *)data;
@@ -529,6 +552,10 @@ static void *adapter_thread(void *data)
             a->quitting = true;
             break;
          }
+      }
+
+      if (calibrate) {
+         print_calibration_data();
       }
    }
 
@@ -637,11 +664,64 @@ enum {
 };
 
 static struct option options[] = {
-   { "raw", no_argument, 0, 'r' },
+   { "calibrate", no_argument, 0, 'c' },
+   { "set-calibration-data", required_argument, 0, 's' },
    { "vendor", required_argument, 0, opt_vendor },
    { "product", required_argument, 0, opt_product },
    { 0, 0, 0, 0 },
 };
+
+void set_calibration_data(char str[])
+{
+   char *token = strtok(str, ",");
+   for (size_t i = 0; token && i < sizeof(AXIS_MIN_VALUES); i++) {
+      AXIS_MIN_VALUES[i] = atoi(token);
+      token = strtok(NULL, ",");
+
+      AXIS_MAX_VALUES[i] = atoi(token);
+      token = strtok(NULL, ",");
+   }
+}
+
+void parse_args(int argc, char *argv[])
+{
+   bool has_calibration_data = false;
+   for (;;) {
+      int option_index = 0;
+      int c = getopt_long(argc, argv, "r", options, &option_index);
+      if (c == -1)
+         break;
+
+      switch (c) {
+         case 'c':
+            fprintf(stderr, "displaying calibration data, quit to display the results\n");
+            calibrate = true;
+            break;
+         case 's':
+            set_calibration_data(optarg);
+            has_calibration_data = true;
+            break;
+         case opt_vendor:
+            vendor_id = parse_id(optarg);
+            fprintf(stderr, "vendor_id = %#06x\n", vendor_id);
+            break;
+         case opt_product:
+            product_id = parse_id(optarg);
+            fprintf(stderr, "product_id = %#06x\n", product_id);
+            break;
+      }
+   }
+
+   if (!has_calibration_data && !calibrate) {
+      memset(&AXIS_MIN_VALUES, 0, sizeof(AXIS_MIN_VALUES));
+      memset(&AXIS_MAX_VALUES, 0xFF, sizeof(AXIS_MAX_VALUES));
+   }
+
+   if (!calibrate) {
+      printf("using calibration data: ");
+      print_calibration_data();
+   }
+}
 
 int main(int argc, char *argv[])
 {
@@ -651,27 +731,7 @@ int main(int argc, char *argv[])
 
    memset(&sa, 0, sizeof(sa));
 
-   while (1) {
-      int option_index = 0;
-      int c = getopt_long(argc, argv, "r", options, &option_index);
-      if (c == -1)
-         break;
-
-      switch (c) {
-      case 'r':
-         fprintf(stderr, "raw mode enabled\n");
-         raw_mode = true;
-         break;
-      case opt_vendor:
-         vendor_id = parse_id(optarg);
-         fprintf(stderr, "vendor_id = %#06x\n", vendor_id);
-         break;
-      case opt_product:
-         product_id = parse_id(optarg);
-         fprintf(stderr, "product_id = %#06x\n", product_id);
-         break;
-      }
-   }
+   parse_args(argc, argv);
 
    sa.sa_handler = quitting_signal;
    sa.sa_flags = SA_RESTART | SA_RESETHAND;
